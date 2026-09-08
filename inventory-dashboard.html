@@ -540,7 +540,7 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
       <a href="#customers" class="nav-link" data-customer-group="">ลูกค้า</a>
       <a href="#customers" class="nav-link nav-sublink" data-customer-group="TCM Consulting Group">TCM Consulting Group</a>
       <a href="#customers" class="nav-link nav-sublink" data-customer-group="TCM Solution and Service">TCM Solution and Service</a>
-      <a href="#history" class="nav-link">ประวัติรับเข้า-ส่งออก</a>
+      <a href="#history" class="nav-link">ประวัติรับเข้า-เบิกออก</a>
       <a href="#users" class="nav-link" data-admin-only>ผู้ใช้งาน</a>
     </nav>
     <div class="sidebar-foot">
@@ -559,6 +559,7 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
           <p>สรุปมูลค่าสต็อก รายการใกล้หมด และความเคลื่อนไหวล่าสุด</p>
         </div>
         <div class="btn-row">
+          <button class="btn" id="btnMonthlyReport">รายงานประจำเดือน</button>
           <button class="btn" id="btnRecordMovement" data-admin-only>บันทึกรับเข้า / เบิกออก</button>
           <button class="btn btn-primary" id="btnAddProduct" data-admin-only>+ เพิ่มสินค้า</button>
         </div>
@@ -1069,6 +1070,63 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
   </form>
 </dialog>
 
+<!-- ============ Monthly report dialog ============ -->
+<dialog id="monthlyReportDialog" style="width:840px; max-width:96vw;">
+  <div class="dialog-head">
+    <h3>รายงานประจำเดือน</h3>
+    <button type="button" class="btn-ghost" id="btnCloseMonthlyReport">✕</button>
+  </div>
+  <div class="dialog-body">
+    <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+      <div class="field" style="min-width:180px;">
+        <label for="reportMonth">เลือกเดือน</label>
+        <input type="month" id="reportMonth">
+      </div>
+      <button type="button" class="btn btn-primary" id="btnGenerateReport">สร้างรายงาน</button>
+      <div style="flex:1"></div>
+      <button type="button" class="btn" id="btnReportExportCsv" style="display:none;">Export CSV</button>
+      <button type="button" class="btn" id="btnReportExportExcel" style="display:none;">Export Excel</button>
+    </div>
+
+    <div class="form-error" id="reportError"></div>
+
+    <div id="reportSummaryWrap" style="display:none; margin-top:16px;">
+      <div class="tally-row" style="grid-template-columns: repeat(3, 1fr); margin-bottom:16px;">
+        <div class="tally">
+          <div class="label">รับเข้ารวม</div>
+          <div class="value mono" id="reportTotalIn" style="font-size:20px;">-</div>
+        </div>
+        <div class="tally">
+          <div class="label">เบิกออกรวม</div>
+          <div class="value mono" id="reportTotalOut" style="font-size:20px;">-</div>
+        </div>
+        <div class="tally">
+          <div class="label">จำนวนรายการทั้งหมด</div>
+          <div class="value mono" id="reportTxnCount" style="font-size:20px;">-</div>
+        </div>
+      </div>
+      <div style="max-height:360px; overflow-y:auto; border:1px solid var(--border); border-radius:var(--radius);">
+        <table>
+          <thead>
+            <tr>
+              <th>วันที่-เวลา</th>
+              <th>สินค้า</th>
+              <th>ประเภท</th>
+              <th class="num">จำนวน</th>
+              <th>ผู้ทำรายการ</th>
+              <th>หมายเหตุ</th>
+            </tr>
+          </thead>
+          <tbody id="reportBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="dialog-foot">
+    <button type="button" class="btn" id="btnCloseMonthlyReport2">ปิด</button>
+  </div>
+</dialog>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -1267,6 +1325,121 @@ function runApp(sb, currentProfile){
     changePasswordDialog.close();
     showToast('เปลี่ยนรหัสผ่านเรียบร้อย');
   });
+
+  // ---------------- Monthly report ----------------
+  const monthlyReportDialog = document.getElementById('monthlyReportDialog');
+  let reportRows = [];
+
+  document.getElementById('btnMonthlyReport').addEventListener('click', () => {
+    document.getElementById('reportError').textContent = '';
+    document.getElementById('reportSummaryWrap').style.display = 'none';
+    document.getElementById('btnReportExportCsv').style.display = 'none';
+    document.getElementById('btnReportExportExcel').style.display = 'none';
+    reportRows = [];
+    const now = new Date();
+    document.getElementById('reportMonth').value =
+      `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    monthlyReportDialog.showModal();
+  });
+
+  document.getElementById('btnCloseMonthlyReport').addEventListener('click', () => monthlyReportDialog.close());
+  document.getElementById('btnCloseMonthlyReport2').addEventListener('click', () => monthlyReportDialog.close());
+
+  document.getElementById('btnGenerateReport').addEventListener('click', async () => {
+    const errEl = document.getElementById('reportError');
+    errEl.textContent = '';
+
+    const monthVal = document.getElementById('reportMonth').value;
+    if (!monthVal){ errEl.textContent = 'กรุณาเลือกเดือน'; return; }
+
+    const [y, m] = monthVal.split('-').map(Number);
+    const startDate = new Date(y, m - 1, 1);
+    const endDate = new Date(y, m, 1);
+
+    const genBtn = document.getElementById('btnGenerateReport');
+    genBtn.disabled = true;
+
+    const { data, error } = await sb
+      .from('stock_movements')
+      .select('*, products(name, sku)')
+      .gte('created_at', startDate.toISOString())
+      .lt('created_at', endDate.toISOString())
+      .order('created_at', { ascending: true });
+
+    genBtn.disabled = false;
+
+    if (error){ errEl.textContent = 'โหลดรายงานไม่สำเร็จ: ' + error.message; return; }
+
+    reportRows = data || [];
+    renderMonthlyReport(reportRows);
+  });
+
+  function renderMonthlyReport(rows){
+    const totalIn = rows.filter(r => r.type === 'in').reduce((s, r) => s + Number(r.quantity), 0);
+    const totalOut = rows.filter(r => r.type === 'out').reduce((s, r) => s + Number(r.quantity), 0);
+
+    document.getElementById('reportTotalIn').textContent = '+' + int(totalIn);
+    document.getElementById('reportTotalOut').textContent = '-' + int(totalOut);
+    document.getElementById('reportTxnCount').textContent = int(rows.length);
+
+    const body = document.getElementById('reportBody');
+    body.innerHTML = rows.length
+      ? rows.map(mv => `
+          <tr>
+            <td class="mono">${dt(mv.created_at)}</td>
+            <td>${escapeHtml(mv.products ? mv.products.name : '(สินค้าถูกลบแล้ว)')}</td>
+            <td>${mv.type === 'in'
+              ? '<span class="badge badge-move-in">รับเข้า</span>'
+              : '<span class="badge badge-move-out">เบิกออก</span>'}</td>
+            <td class="num mono">${mv.type === 'in' ? '+' : '-'}${int(mv.quantity)}</td>
+            <td>${escapeHtml(mv.user_email || '-')}</td>
+            <td>${escapeHtml(mv.note || '-')}</td>
+          </tr>
+        `).join('')
+      : `<tr><td colspan="6" class="empty-note">ไม่มีรายการเคลื่อนไหวในเดือนนี้</td></tr>`;
+
+    document.getElementById('reportSummaryWrap').style.display = '';
+    document.getElementById('btnReportExportCsv').style.display = rows.length ? '' : 'none';
+    document.getElementById('btnReportExportExcel').style.display = rows.length ? '' : 'none';
+  }
+
+  document.getElementById('btnReportExportCsv').addEventListener('click', () => exportMonthlyReport('csv'));
+  document.getElementById('btnReportExportExcel').addEventListener('click', () => exportMonthlyReport('xlsx'));
+
+  function exportMonthlyReport(format){
+    if (!reportRows.length) return;
+    const monthVal = document.getElementById('reportMonth').value;
+
+    const rows = reportRows.map(mv => ({
+      'วันที่-เวลา': dt(mv.created_at),
+      'สินค้า': mv.products ? mv.products.name : '(สินค้าถูกลบแล้ว)',
+      'SKU': mv.products ? mv.products.sku : '',
+      'ประเภท': mv.type === 'in' ? 'รับเข้า' : 'เบิกออก',
+      'จำนวน': Number(mv.quantity),
+      'ผู้ทำรายการ': mv.user_email || '',
+      'หมายเหตุ': mv.note || ''
+    }));
+
+    const filenameBase = `monthly-report-${monthVal}`;
+
+    if (format === 'csv'){
+      const headers = Object.keys(rows[0]);
+      const csvLines = [headers.join(',')].concat(
+        rows.map(r => headers.map(h => {
+          const v = r[h] === undefined || r[h] === null ? '' : String(r[h]);
+          return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+        }).join(','))
+      );
+      const csvContent = '\uFEFF' + csvLines.join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      downloadBlob(blob, filenameBase + '.csv');
+    } else {
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'รายงานประจำเดือน');
+      XLSX.writeFile(wb, filenameBase + '.xlsx');
+    }
+  }
 
   const money = (n) => Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const int = (n) => Number(n || 0).toLocaleString('th-TH');
