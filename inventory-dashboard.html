@@ -119,6 +119,9 @@
 
   .nav a:hover{ color: var(--text); background: var(--panel-2); }
   .nav a.active{ color: var(--amber); border-left-color: var(--amber); background: var(--panel-2); }
+  .nav a.nav-sublink{ padding-left: 24px; font-size: 12.5px; color: var(--text-faint); }
+  .nav a.nav-sublink:hover{ color: var(--text-muted); }
+  .nav a.nav-sublink.active{ color: var(--amber); }
 
   .sidebar-foot{
     margin-top: auto;
@@ -533,7 +536,9 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
     <nav class="nav">
       <a href="#overview" class="nav-link active">ภาพรวม</a>
       <a href="#products" class="nav-link">สินค้า</a>
-      <a href="#customers" class="nav-link">ลูกค้า</a>
+      <a href="#customers" class="nav-link" data-customer-group="">ลูกค้า</a>
+      <a href="#customers" class="nav-link nav-sublink" data-customer-group="TCM Consulting Group">TCM Consulting Group</a>
+      <a href="#customers" class="nav-link nav-sublink" data-customer-group="TCM Solution and Service">TCM Solution and Service</a>
       <a href="#history" class="nav-link">ประวัติเข้า-ออก</a>
       <a href="#users" class="nav-link" data-admin-only>ผู้ใช้งาน</a>
     </nav>
@@ -619,8 +624,8 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
       <div id="customerListWrap">
         <div class="page-head">
           <div>
-            <h1>ลูกค้า</h1>
-            <p>จัดการฐานข้อมูลลูกค้า และรายการสินค้าที่ขายให้แต่ละราย</p>
+            <h1 id="customerListTitle">ลูกค้า</h1>
+            <p id="customerListSubtitle">จัดการฐานข้อมูลลูกค้า และรายการสินค้าที่ขายให้แต่ละราย</p>
           </div>
           <div class="btn-row">
             <button class="btn btn-primary" id="btnAddCustomer" data-admin-only>+ เพิ่มลูกค้า</button>
@@ -628,7 +633,7 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
         </div>
         <div class="panel">
           <div class="panel-head">
-            <h2>ลูกค้าทั้งหมด<span class="count" id="customerCount"></span></h2>
+            <h2>รายชื่อลูกค้า<span class="count" id="customerCount"></span></h2>
             <input type="text" class="search" id="customerSearch" placeholder="ค้นหาชื่อลูกค้า...">
           </div>
           <table>
@@ -636,13 +641,14 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
               <tr>
                 <th>ชื่อลูกค้า</th>
                 <th>เบอร์โทร</th>
+                <th>กลุ่ม</th>
                 <th class="num">จำนวนรายการ</th>
                 <th class="num">มูลค่ารวม</th>
                 <th></th>
               </tr>
             </thead>
             <tbody id="customersBody">
-              <tr><td colspan="5" class="empty-note">กำลังโหลด...</td></tr>
+              <tr><td colspan="6" class="empty-note">กำลังโหลด...</td></tr>
             </tbody>
           </table>
         </div>
@@ -924,6 +930,14 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
       <div class="field">
         <label for="cName">ชื่อลูกค้า</label>
         <input type="text" id="cName" required>
+      </div>
+      <div class="field">
+        <label for="cGroup">กลุ่มบริษัท</label>
+        <select id="cGroup">
+          <option value="">— ไม่ระบุ —</option>
+          <option value="TCM Consulting Group">TCM Consulting Group</option>
+          <option value="TCM Solution and Service">TCM Solution and Service</option>
+        </select>
       </div>
       <div class="field-row">
         <div class="field">
@@ -1651,15 +1665,24 @@ function runApp(sb, currentProfile){
   });
 
   // ---------------- Customers ----------------
+  let customerGroupFilter = '';
+
   function renderCustomers(filterText){
     const body = document.getElementById('customersBody');
     const q = (filterText || '').trim().toLowerCase();
-    const rows = customers.filter(c => !q || c.name.toLowerCase().includes(q));
+    const groupFiltered = customerGroupFilter
+      ? customers.filter(c => (c.company_group || '') === customerGroupFilter)
+      : customers;
+    const rows = groupFiltered.filter(c => !q || c.name.toLowerCase().includes(q));
 
-    document.getElementById('customerCount').textContent = `(${customers.length})`;
+    document.getElementById('customerListTitle').textContent = customerGroupFilter || 'ลูกค้า';
+    document.getElementById('customerListSubtitle').textContent = customerGroupFilter
+      ? `รายชื่อลูกค้าในกลุ่ม ${customerGroupFilter}`
+      : 'จัดการฐานข้อมูลลูกค้า และรายการสินค้าที่ขายให้แต่ละราย';
+    document.getElementById('customerCount').textContent = `(${groupFiltered.length})`;
 
     if (!rows.length){
-      body.innerHTML = `<tr><td colspan="5" class="empty-note">${customers.length ? 'ไม่พบลูกค้าที่ค้นหา' : 'ยังไม่มีลูกค้า'}</td></tr>`;
+      body.innerHTML = `<tr><td colspan="6" class="empty-note">${groupFiltered.length ? 'ไม่พบลูกค้าที่ค้นหา' : 'ยังไม่มีลูกค้าในกลุ่มนี้'}</td></tr>`;
       return;
     }
 
@@ -1670,6 +1693,7 @@ function runApp(sb, currentProfile){
         <tr data-id="${c.id}">
           <td class="product-name">${escapeHtml(c.name)}</td>
           <td>${escapeHtml(c.phone || '-')}</td>
+          <td>${escapeHtml(c.company_group || '-')}</td>
           <td class="num mono">${int(items.length)}</td>
           <td class="num mono">฿${money(total)}</td>
           <td>
@@ -1683,6 +1707,7 @@ function runApp(sb, currentProfile){
       `;
     }).join('');
   }
+
 
   function openCustomerDetail(id){
     currentCustomerId = id;
@@ -1784,9 +1809,22 @@ function runApp(sb, currentProfile){
   const sections = ['overview', 'products', 'customers', 'history', 'users'].map(id => document.getElementById(id));
   const navLinks = document.querySelectorAll('.nav-link');
 
+  function updateNavActiveState(targetId){
+    navLinks.forEach(a => {
+      const href = a.getAttribute('href').slice(1);
+      if (href !== targetId){ a.classList.remove('active'); return; }
+      if (targetId === 'customers'){
+        const linkGroup = a.dataset.customerGroup || '';
+        a.classList.toggle('active', linkGroup === customerGroupFilter);
+      } else {
+        a.classList.add('active');
+      }
+    });
+  }
+
   function showTab(targetId){
     sections.forEach(s => s.classList.toggle('active', s.id === targetId));
-    navLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + targetId));
+    updateNavActiveState(targetId);
     window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
     history.replaceState(null, '', '#' + targetId);
   }
@@ -1796,6 +1834,11 @@ function runApp(sb, currentProfile){
       e.preventDefault();
       const targetId = a.getAttribute('href').slice(1);
       if (targetId === 'users' && !isAdmin) return;
+      if (targetId === 'customers'){
+        customerGroupFilter = a.dataset.customerGroup || '';
+        backToCustomerList();
+        renderCustomers(document.getElementById('customerSearch').value);
+      }
       showTab(targetId);
       if (targetId === 'users') loadUsers();
     });
@@ -1971,6 +2014,7 @@ function runApp(sb, currentProfile){
     document.getElementById('customerDialogTitle').textContent = customer ? 'แก้ไขลูกค้า' : 'เพิ่มลูกค้าใหม่';
     document.getElementById('customerId').value = customer ? customer.id : '';
     document.getElementById('cName').value = customer ? customer.name : '';
+    document.getElementById('cGroup').value = customer ? (customer.company_group || '') : customerGroupFilter;
     document.getElementById('cPhone').value = customer ? (customer.phone || '') : '';
     document.getElementById('cAddress').value = customer ? (customer.address || '') : '';
     document.getElementById('cNote').value = customer ? (customer.note || '') : '';
@@ -1982,6 +2026,7 @@ function runApp(sb, currentProfile){
     const id = document.getElementById('customerId').value;
     const payload = {
       name: document.getElementById('cName').value.trim(),
+      company_group: document.getElementById('cGroup').value || null,
       phone: document.getElementById('cPhone').value.trim() || null,
       address: document.getElementById('cAddress').value.trim() || null,
       note: document.getElementById('cNote').value.trim() || null,
