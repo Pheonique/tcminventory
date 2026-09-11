@@ -1,0 +1,2677 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>ระบบจัดการสต็อกสินค้า</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#12151c">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="คลังสินค้า">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg: #12151c;
+    --panel: #1a202b;
+    --panel-2: #1f2632;
+    --border: #2b3242;
+    --text: #e7eaf0;
+    --text-muted: #8b93a3;
+    --text-faint: #5c6579;
+    --amber: #e2a93f;
+    --amber-dim: #4a3d22;
+    --green: #4fa97c;
+    --green-dim: #1f3329;
+    --red: #d9635b;
+    --red-dim: #3a2323;
+    --sidebar-w: 220px;
+    --radius: 3px;
+  }
+
+  *{ box-sizing: border-box; }
+
+  html{ scroll-behavior: smooth; }
+
+  body{
+    margin:0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .mono{ font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+  h1, h2, h3{
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  a{ color: inherit; }
+
+  /* ---------- Role-based visibility ---------- */
+  body.role-staff [data-admin-only]{ display: none !important; }
+
+  /* ---------- Layout ---------- */
+  .app{
+    display: grid;
+    grid-template-columns: var(--sidebar-w) 1fr;
+    min-height: 100vh;
+  }
+
+  .app[hidden]{ display: none; }
+
+  .sidebar{
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 28px 20px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .brand{
+    display:flex;
+    align-items:center;
+    gap: 10px;
+    margin-bottom: 36px;
+  }
+
+  .brand-mark{
+    width: 10px;
+    height: 28px;
+    background: repeating-linear-gradient(
+      45deg,
+      var(--amber),
+      var(--amber) 4px,
+      var(--bg) 4px,
+      var(--bg) 8px
+    );
+    border-radius: 1px;
+    flex-shrink: 0;
+  }
+
+  .brand-text h1{ font-size: 16px; color: var(--text); }
+  .brand-text span{ font-size: 11px; color: var(--text-faint); }
+
+  .nav{ display: flex; flex-direction: column; gap: 2px; }
+
+  .nav a{
+    text-decoration: none;
+    color: var(--text-muted);
+    padding: 9px 10px;
+    border-radius: var(--radius);
+    font-size: 13.5px;
+    border-left: 2px solid transparent;
+    transition: color .15s ease, border-color .15s ease, background .15s ease;
+  }
+
+  .nav a:hover{ color: var(--text); background: var(--panel-2); }
+  .nav a.active{ color: var(--amber); border-left-color: var(--amber); background: var(--panel-2); }
+  .nav a.nav-sublink{ padding-left: 24px; font-size: 12.5px; color: var(--text-faint); }
+  .nav a.nav-sublink:hover{ color: var(--text-muted); }
+  .nav a.nav-sublink.active{ color: var(--amber); }
+
+  .sidebar-foot{
+    margin-top: auto;
+    font-size: 11px;
+    color: var(--text-faint);
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+
+  .sidebar-foot .user-label{
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-bottom: 8px;
+    word-break: break-all;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+  }
+
+  .sidebar-foot .user-label::selection{ background: transparent; }
+  .sidebar-foot .user-label::-moz-selection{ background: transparent; }
+
+  .sidebar-foot .btn-ghost{ padding: 4px 0; font-size: 12px; }
+
+  .main{ padding: 32px 40px 80px; max-width: 1180px; }
+
+  .tab-section{ display: none; }
+  .tab-section.active{ display: block; }
+
+  .page-head{
+    display:flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 28px;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .page-head h1{ font-size: 24px; }
+  .page-head p{ margin: 6px 0 0; color: var(--text-muted); font-size: 13px; }
+
+  /* ---------- Buttons ---------- */
+  button{ font-family: inherit; cursor: pointer; }
+
+  .btn{
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 9px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .btn:hover{ border-color: var(--text-faint); }
+
+  .btn-primary{
+    background: var(--amber);
+    border-color: var(--amber);
+    color: #1a1305;
+    font-weight: 600;
+  }
+  .btn-primary:hover{ background: #eab754; border-color: #eab754; }
+
+  .btn-ghost{
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-muted);
+    padding: 6px 8px;
+  }
+  .btn-ghost:hover{ color: var(--text); background: var(--panel-2); }
+
+  .btn-row{ display:flex; gap: 10px; flex-wrap: wrap; }
+
+  /* ---------- Stat tally row ---------- */
+  .tally-row{
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 32px;
+  }
+
+  .tally{
+    background: var(--panel);
+    padding: 18px 20px;
+  }
+
+  .tally .label{ font-size: 12px; color: var(--text-muted); }
+  .tally .value{ font-size: 26px; margin-top: 8px; font-weight: 600; }
+  .tally .value.amber{ color: var(--amber); }
+  .tally .value.red{ color: var(--red); }
+  .tally .sub{ font-size: 11.5px; color: var(--text-faint); margin-top: 4px; }
+
+  /* ---------- Panels ---------- */
+  .panel{
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 32px;
+  }
+
+  .panel-head{
+    display:flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .panel-head h2{ font-size: 15px; }
+  .panel-head .count{ color: var(--text-faint); font-size: 12px; margin-left: 8px; font-weight: 400; font-family: 'IBM Plex Mono', monospace; }
+
+  .search{
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 7px 10px;
+    font-size: 13px;
+    width: 220px;
+  }
+  .search:focus{ outline: none; border-color: var(--amber); }
+
+  /* ---------- Low stock strip ---------- */
+  .low-stock-list{ padding: 4px 0; }
+  .low-stock-row{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-left: 2px solid var(--red);
+    border-bottom: 1px solid var(--border);
+    gap: 12px;
+  }
+  .low-stock-row:last-child{ border-bottom: none; }
+  .low-stock-row .name{ font-weight: 500; }
+  .low-stock-row .sku{ color: var(--text-faint); font-size: 12px; margin-left: 8px; }
+  .low-stock-row .qty{ color: var(--red); font-size: 13px; }
+  .empty-note{ padding: 18px 20px; color: var(--text-faint); font-size: 13px; }
+
+  /* ---------- Tables ---------- */
+  table{ width: 100%; border-collapse: collapse; }
+
+  th{
+    text-align: left;
+    font-size: 11.5px;
+    color: var(--text-faint);
+    font-weight: 500;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  td{
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13.5px;
+    vertical-align: middle;
+  }
+
+  tbody tr:last-child td{ border-bottom: none; }
+  tbody tr:hover{ background: var(--panel-2); }
+
+  td.num, th.num{ text-align: right; }
+
+  .badge{
+    display:inline-block;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .badge-ok{ background: var(--green-dim); color: var(--green); }
+  .badge-low{ background: var(--amber-dim); color: var(--amber); }
+  .badge-out{ background: var(--red-dim); color: var(--red); }
+
+  .badge-move-in{ background: var(--green-dim); color: var(--green); }
+  .badge-move-out{ background: var(--red-dim); color: var(--red); }
+
+  .row-actions{ display:flex; gap: 4px; justify-content: flex-end; flex-wrap: wrap; }
+
+  .product-name{ font-weight: 500; }
+  .product-sku{ color: var(--text-faint); font-size: 12px; margin-top: 2px; }
+
+  /* ---------- Dialogs ---------- */
+  dialog{
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0;
+    width: 420px;
+    max-width: 92vw;
+  }
+  dialog::backdrop{ background: rgba(8,10,14,0.7); }
+
+  .dialog-head{
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--border);
+    display:flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .dialog-head h3{ font-size: 16px; }
+  .dialog-body{ padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; }
+  .dialog-foot{ padding: 16px 22px; border-top: 1px solid var(--border); display:flex; justify-content:flex-end; gap: 10px; }
+
+  .field{ display:flex; flex-direction: column; gap: 6px; }
+  .field label{ font-size: 12.5px; color: var(--text-muted); }
+  .field input, .field select, .field textarea{
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 9px 10px;
+    font-size: 13.5px;
+    font-family: inherit;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus{ outline: none; border-color: var(--amber); }
+  .field-row{ display:flex; gap: 12px; }
+  .field-row .field{ flex: 1; }
+
+  .type-toggle{ display:flex; gap: 8px; }
+  .type-toggle label{
+    flex:1;
+    text-align:center;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 9px 6px;
+    font-size: 12.5px;
+    cursor: pointer;
+    color: var(--text-muted);
+    line-height: 1.35;
+  }
+  .type-toggle input{ display:none; }
+  .type-toggle input:checked + span{ color: inherit; }
+  .type-toggle label:has(input:checked){ border-color: var(--amber); color: var(--amber); background: var(--amber-dim); }
+
+  .form-error{ font-size: 12.5px; color: var(--red); min-height: 16px; }
+
+  /* ---------- Searchable product combo box ---------- */
+  .combo-wrap{ position: relative; }
+  .combo-results{
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    max-height: 220px;
+    overflow-y: auto;
+    z-index: 10;
+  }
+  .combo-item{
+    padding: 8px 10px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+  }
+  .combo-item:last-child{ border-bottom: none; }
+  .combo-item:hover, .combo-item.active{ background: var(--panel-2); }
+  .combo-item-name{ font-size: 13.5px; }
+  .combo-item-meta{ font-size: 11.5px; color: var(--text-faint); margin-top: 2px; }
+  .combo-empty{ padding: 10px; color: var(--text-faint); font-size: 12.5px; }
+
+  /* ---------- Cart table (white background, for the movement dialog) ---------- */
+  .cart-table{ width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .cart-table th{
+    text-align: left;
+    padding: 8px 10px;
+    font-size: 11px;
+    color: #666;
+    border-bottom: 1px solid #ddd;
+    background: #f3f3f3;
+    position: sticky;
+    top: 0;
+  }
+  .cart-table td{
+    padding: 8px 10px;
+    border-bottom: 1px solid #eee;
+    color: #17181c;
+    vertical-align: middle;
+  }
+  .cart-table td.num, .cart-table th.num{ text-align: right; }
+  .cart-table tr:last-child td{ border-bottom: none; }
+  .cart-empty{ padding: 24px 10px; text-align: center; color: #999; }
+  .cart-remove-btn{
+    background: none;
+    border: none;
+    color: #c0392b;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 6px;
+  }
+  .cart-remove-btn:hover{ text-decoration: underline; }
+
+  /* ---------- Setup / login notice ---------- */
+  .setup-wrap{
+    max-width: 640px;
+    margin: 80px auto;
+    padding: 0 20px;
+  }
+  .setup-panel{
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px 30px;
+  }
+  .setup-panel h1{ font-size: 20px; margin-bottom: 10px; }
+  .setup-panel p{ color: var(--text-muted); font-size: 13.5px; margin: 6px 0; }
+  .setup-panel ol{ color: var(--text-muted); font-size: 13.5px; padding-left: 20px; }
+  .setup-panel code{
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12.5px;
+  }
+  .setup-panel pre{
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    overflow-x: auto;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .toast{
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--green);
+    border-radius: var(--radius);
+    padding: 12px 18px;
+    font-size: 13px;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity .2s ease, transform .2s ease;
+    pointer-events: none;
+    z-index: 50;
+  }
+  .toast.error{ border-left-color: var(--red); }
+  .toast.show{ opacity: 1; transform: translateY(0); }
+
+  @media (max-width: 860px){
+    .app{ grid-template-columns: 1fr; }
+    .sidebar{ position: static; height: auto; padding: 18px 16px; }
+    .main{ padding: 24px 16px 60px; }
+    .tally-row{ grid-template-columns: 1fr 1fr; }
+    .search{ width: 140px; }
+  }
+
+  :focus-visible{ outline: 2px solid var(--amber); outline-offset: 2px; }
+</style>
+</head>
+<body>
+
+<!-- ============ SETUP NOTICE (shown until Supabase config is filled in) ============ -->
+<div id="setupNotice" class="setup-wrap" hidden>
+  <div class="setup-panel">
+    <h1>ยังไม่ได้เชื่อมต่อฐานข้อมูล</h1>
+    <p>ไฟล์นี้ใช้ Supabase (ฟรี) เป็นฐานข้อมูล ก่อนใช้งานให้ทำตามขั้นตอนนี้ก่อน:</p>
+    <ol>
+      <li>สมัครบัญชีฟรีที่ <code>supabase.com</code> แล้วสร้างโปรเจกต์ใหม่</li>
+      <li>ไปที่ <code>SQL Editor</code> แล้วรันคำสั่งสร้างตารางที่ได้รับมาพร้อมไฟล์นี้</li>
+      <li>ไปที่ <code>Project Settings → API</code> คัดลอกค่า <code>Project URL</code> และ <code>anon public key</code></li>
+      <li>เปิดไฟล์ <code>inventory-dashboard.html</code> ด้วยโปรแกรมแก้ไขข้อความ แล้วแก้ค่าในบรรทัดนี้ใกล้ด้านบนของ
+        <code>&lt;script&gt;</code>:</li>
+    </ol>
+    <pre>const SUPABASE_URL = "https://YOUR-PROJECT.supabase.co";
+const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
+    <p>บันทึกไฟล์แล้วเปิดใหม่อีกครั้ง — ระบบจะเชื่อมต่อฐานข้อมูลให้อัตโนมัติ</p>
+  </div>
+</div>
+
+<!-- ============ LOGIN SCREEN ============ -->
+<div id="loginWrap" class="setup-wrap" hidden>
+  <div class="setup-panel">
+    <h1>เข้าสู่ระบบ</h1>
+    <p>กรุณาเข้าสู่ระบบเพื่อใช้งานระบบจัดการสต็อกสินค้า</p>
+    <form id="loginForm" style="display:flex; flex-direction:column; gap:14px; margin-top:18px;">
+      <div class="field">
+        <label for="loginEmail">อีเมล</label>
+        <input type="email" id="loginEmail" required autocomplete="username">
+      </div>
+      <div class="field">
+        <label for="loginPassword">รหัสผ่าน</label>
+        <input type="password" id="loginPassword" required autocomplete="current-password">
+      </div>
+      <div class="form-error" id="loginFormError"></div>
+      <button type="submit" class="btn btn-primary" id="loginSubmitBtn" style="align-self:flex-start;">เข้าสู่ระบบ</button>
+    </form>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div class="app" id="app" hidden>
+
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div class="brand-text">
+        <h1>คลังสินค้า</h1>
+        <span>ระบบจัดการสต็อก</span>
+      </div>
+    </div>
+    <nav class="nav">
+      <a href="#overview" class="nav-link active">ภาพรวม</a>
+      <a href="#products" class="nav-link">สินค้า</a>
+      <a href="#customers" class="nav-link" data-customer-group="">ลูกค้า</a>
+      <a href="#customers" class="nav-link nav-sublink" data-customer-group="TCM Consulting Group">TCM Consulting Group</a>
+      <a href="#customers" class="nav-link nav-sublink" data-customer-group="TCM Solution and Service">TCM Solution and Service</a>
+      <a href="#history" class="nav-link" data-admin-only>ประวัติรับเข้า-เบิกออก</a>
+      <a href="#users" class="nav-link" data-admin-only>ผู้ใช้งาน</a>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="user-label" id="currentUserLabel"></div>
+      <button type="button" class="btn-ghost" id="btnChangePassword" style="display:block; padding:4px 0; font-size:12px;">เปลี่ยนรหัสผ่าน</button>
+      <button type="button" class="btn-ghost" id="btnLogout">ออกจากระบบ</button>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <section id="overview" class="tab-section">
+      <div class="page-head">
+        <div>
+          <h1>ภาพรวมคลังสินค้า</h1>
+          <p>สรุปมูลค่าสต็อก รายการใกล้หมด และความเคลื่อนไหวล่าสุด</p>
+        </div>
+        <div class="btn-row">
+          <button class="btn" id="btnMonthlyReport">รายงานประจำเดือน</button>
+          <button class="btn" id="btnRecordMovement" data-admin-only>บันทึกรับเข้า / เบิกออก</button>
+          <button class="btn btn-primary" id="btnAddProduct" data-admin-only>+ เพิ่มสินค้า</button>
+        </div>
+      </div>
+
+      <div class="tally-row">
+        <div class="tally">
+          <div class="label">มูลค่าสต็อกรวม</div>
+          <div class="value mono" id="statTotalValue">-</div>
+          <div class="sub">ราคาต้นทุน × จำนวนคงเหลือ</div>
+        </div>
+        <div class="tally">
+          <div class="label">จำนวนรายการสินค้า</div>
+          <div class="value mono" id="statProductCount">-</div>
+          <div class="sub">SKU ทั้งหมด</div>
+        </div>
+        <div class="tally">
+          <div class="label">ใกล้หมด / ต้องสั่งซื้อ</div>
+          <div class="value mono amber" id="statLowStock">-</div>
+          <div class="sub">ต่ำกว่าจุดสั่งซื้อ</div>
+        </div>
+        <div class="tally">
+          <div class="label">เคลื่อนไหววันนี้</div>
+          <div class="value mono" id="statMovementsToday">-</div>
+          <div class="sub">รับเข้า + เบิกออก</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>รายการใกล้หมด<span class="count" id="lowStockCount"></span></h2>
+        </div>
+        <div class="low-stock-list" id="lowStockList">
+          <div class="empty-note">กำลังโหลด...</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="products" class="tab-section">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>สินค้าทั้งหมด<span class="count" id="productCount"></span></h2>
+          <input type="text" class="search" id="productSearch" placeholder="ค้นหา SKU หรือชื่อสินค้า...">
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>สินค้า</th>
+              <th>หมวดหมู่</th>
+              <th class="num">คงเหลือ</th>
+              <th class="num">จุดสั่งซื้อ</th>
+              <th class="num">ต้นทุน/หน่วย</th>
+              <th class="num">มูลค่ารวม</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="productsBody">
+            <tr><td colspan="7" class="empty-note">กำลังโหลด...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="customers" class="tab-section">
+      <div id="customerListWrap">
+        <div class="page-head">
+          <div>
+            <h1 id="customerListTitle">ลูกค้า</h1>
+            <p id="customerListSubtitle">จัดการฐานข้อมูลลูกค้า และรายการสินค้าที่ขายให้แต่ละราย</p>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" id="btnAddCustomer" data-admin-only>+ เพิ่มลูกค้า</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>รายชื่อลูกค้า<span class="count" id="customerCount"></span></h2>
+            <input type="text" class="search" id="customerSearch" placeholder="ค้นหาชื่อลูกค้า...">
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>ชื่อลูกค้า</th>
+                <th>เบอร์โทร</th>
+                <th>กลุ่ม</th>
+                <th class="num">จำนวนรายการ</th>
+                <th class="num">มูลค่ารวม</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="customersBody">
+              <tr><td colspan="6" class="empty-note">กำลังโหลด...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="customerDetailWrap" style="display:none">
+        <div class="page-head">
+          <div>
+            <button type="button" class="btn-ghost" id="btnBackToCustomers" style="padding-left:0; margin-bottom:6px;">← กลับไปหน้าลูกค้า</button>
+            <h1 id="customerDetailName">-</h1>
+            <p id="customerDetailMeta"></p>
+          </div>
+          <div class="btn-row">
+            <button class="btn" id="btnExportCsv">Export CSV</button>
+            <button class="btn" id="btnExportExcel">Export Excel</button>
+            <button class="btn btn-primary" id="btnAddCustomerItem">+ เพิ่มสินค้า</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>รายการสินค้าของลูกค้า<span class="count" id="customerItemCount"></span></h2>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>สินค้า</th>
+                <th class="num">ราคาต่อหน่วย</th>
+                <th class="num">จำนวน</th>
+                <th class="num">รวมเป็นเงิน</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="customerItemsBody">
+              <tr><td colspan="5" class="empty-note">กำลังโหลด...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="history" class="tab-section" data-admin-only>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>ประวัติรับเข้า-เบิกออก<span class="count" id="historyCount"></span></h2>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>วันที่-เวลา</th>
+              <th>สินค้า</th>
+              <th>ประเภท</th>
+              <th class="num">จำนวน</th>
+              <th>ผู้ทำรายการ</th>
+              <th>หมายเหตุ</th>
+            </tr>
+          </thead>
+          <tbody id="historyBody">
+            <tr><td colspan="6" class="empty-note">กำลังโหลด...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="users" class="tab-section" data-admin-only>
+      <div class="page-head">
+        <div>
+          <h1>ผู้ใช้งาน</h1>
+          <p>จัดการสิทธิ์การเข้าใช้งานระบบ และดูประวัติการเข้าสู่ระบบ</p>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btnAddUser">+ เพิ่มผู้ใช้งาน</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>ผู้ใช้งานทั้งหมด<span class="count" id="userCount"></span></h2>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>อีเมล</th>
+              <th>สิทธิ์</th>
+              <th>สถานะ</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="usersBody">
+            <tr><td colspan="4" class="empty-note">กำลังโหลด...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>ประวัติการเข้าสู่ระบบ<span class="count" id="loginLogCount"></span></h2>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>วันที่-เวลา</th>
+              <th>อีเมล</th>
+            </tr>
+          </thead>
+          <tbody id="loginLogsBody">
+            <tr><td colspan="2" class="empty-note">กำลังโหลด...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ============ Add / Edit product dialog ============ -->
+<dialog id="productDialog">
+  <form method="dialog" id="productForm">
+    <div class="dialog-head">
+      <h3 id="productDialogTitle">เพิ่มสินค้าใหม่</h3>
+      <button type="button" class="btn-ghost" data-close-dialog="productDialog">✕</button>
+    </div>
+    <div class="dialog-body">
+      <input type="hidden" id="productId">
+      <div class="field-row">
+        <div class="field">
+          <label for="fSku">รหัสสินค้า (SKU)</label>
+          <input type="text" id="fSku" required>
+        </div>
+        <div class="field">
+          <label for="fUnit">หน่วยนับ</label>
+          <input type="text" id="fUnit" value="ชิ้น">
+        </div>
+      </div>
+      <div class="field">
+        <label for="fName">ชื่อสินค้า</label>
+        <input type="text" id="fName" required>
+      </div>
+      <div class="field">
+        <label for="fCategory">หมวดหมู่</label>
+        <input type="text" id="fCategory">
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="fQuantity">จำนวนคงเหลือเริ่มต้น</label>
+          <input type="number" id="fQuantity" min="0" step="1" value="0" required>
+        </div>
+        <div class="field">
+          <label for="fReorder">จุดสั่งซื้อ (แจ้งเตือนเมื่อต่ำกว่า)</label>
+          <input type="number" id="fReorder" min="0" step="1" value="0" required>
+        </div>
+      </div>
+      <div class="field">
+        <label for="fCost">ราคาต้นทุนต่อหน่วย (บาท)</label>
+        <input type="number" id="fCost" min="0" step="0.01" value="0" required>
+      </div>
+      <div class="form-error" id="productFormError"></div>
+    </div>
+    <div class="dialog-foot">
+      <button type="button" class="btn" data-close-dialog="productDialog">ยกเลิก</button>
+      <button type="submit" class="btn btn-primary" id="productSubmitBtn">บันทึก</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ Record movement dialog ============ -->
+<dialog id="movementDialog" style="width:860px; max-width:96vw;">
+  <form method="dialog" id="movementForm">
+    <div class="dialog-head">
+      <h3>บันทึกรับเข้า / เบิกออก</h3>
+      <button type="button" class="btn-ghost" data-close-dialog="movementDialog">✕</button>
+    </div>
+    <div class="dialog-body">
+      <div style="display:flex; gap:24px; flex-wrap:wrap;">
+        <div style="flex:1; min-width:260px; display:flex; flex-direction:column; gap:14px;">
+          <div class="field">
+            <label>ประเภทรายการ</label>
+            <div class="type-toggle">
+              <label><input type="radio" name="mType" value="in" id="mTypeIn" checked><span>รับเข้า</span></label>
+              <label><input type="radio" name="mType" value="out" id="mTypeOut"><span>เบิกออก</span></label>
+            </div>
+          </div>
+
+          <div class="field" id="mCustomerField" style="display:none;">
+            <label for="mCustomerSearch">ลูกค้า (ถ้าเบิกออกทั่วไป ไม่ต้องเลือก)</label>
+            <div class="combo-wrap">
+              <input type="text" id="mCustomerSearch" placeholder="พิมพ์ชื่อลูกค้า..." autocomplete="off">
+              <input type="hidden" id="mCustomerId">
+              <div id="mCustomerResults" class="combo-results"></div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="mSku">รหัสสินค้า (SKU)</label>
+            <div class="combo-wrap" style="display:flex; gap:8px; position:relative;">
+              <input type="text" id="mSku" placeholder="พิมพ์หรือสแกน SKU" autocomplete="off" style="flex:1;">
+              <button type="button" class="btn" id="btnScanSku" title="สแกนบาร์โค้ด">📷 สแกน</button>
+              <input type="hidden" id="mProduct">
+              <div id="mSkuResults" class="combo-results" style="top: calc(100% + 4px);"></div>
+            </div>
+          </div>
+          <div class="field">
+            <label>รายละเอียดสินค้า</label>
+            <div class="mono" id="mProductDetail" style="padding:9px 10px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg); min-height:38px;">-</div>
+          </div>
+
+          <div class="field-row">
+            <div class="field" id="mPriceField" style="display:none;">
+              <label for="mUnitPrice">ราคาต่อหน่วย (บาท)</label>
+              <input type="number" id="mUnitPrice" min="0" step="0.01">
+            </div>
+            <div class="field">
+              <label for="mQuantity">จำนวน</label>
+              <input type="number" id="mQuantity" min="1" step="1" value="1">
+            </div>
+          </div>
+
+          <button type="button" class="btn btn-primary" id="btnAddCartLine" style="width:100%;">+ เพิ่มรายการ</button>
+          <div class="form-error" id="mLineError"></div>
+
+          <div class="field">
+            <label for="mNote">หมายเหตุ (ไม่บังคับ)</label>
+            <input type="text" id="mNote" placeholder="เช่น รับจากซัพพลายเออร์ / เบิกให้ออเดอร์ #123">
+          </div>
+        </div>
+
+        <div style="flex:1.2; min-width:280px; display:flex; flex-direction:column;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <label style="font-size:12.5px; color:var(--text-muted);">รายการที่จะบันทึก (<span id="cartCount">0</span>)</label>
+            <button type="button" class="btn-ghost" id="btnClearCart" style="font-size:12px;">ล้างทั้งหมด</button>
+          </div>
+          <div style="background:#fff; border-radius:var(--radius); flex:1; min-height:220px; max-height:360px; overflow-y:auto;">
+            <table class="cart-table">
+              <thead>
+                <tr id="cartTableHead"></tr>
+              </thead>
+              <tbody id="cartTableBody">
+                <tr><td class="cart-empty">ยังไม่มีรายการ</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="cartGrandTotalWrap" style="display:none; text-align:right; margin-top:8px; font-weight:600; color:var(--amber);">
+            รวมทั้งหมด: <span id="cartGrandTotal">฿0.00</span>
+          </div>
+        </div>
+      </div>
+      <div class="form-error" id="movementFormError"></div>
+    </div>
+    <div class="dialog-foot">
+      <button type="button" class="btn" data-close-dialog="movementDialog">ยกเลิก</button>
+      <button type="submit" class="btn btn-primary" id="movementSubmitBtn">บันทึกทั้งหมด</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ Barcode scanner dialog ============ -->
+<dialog id="scannerDialog" style="width:420px;">
+  <div class="dialog-head">
+    <h3>สแกนบาร์โค้ด SKU</h3>
+    <button type="button" class="btn-ghost" id="btnCloseScannerDialog">✕</button>
+  </div>
+  <div class="dialog-body">
+    <div id="scannerContainer" style="width:100%; min-height:220px; background:var(--bg); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden;"></div>
+    <div class="form-error" id="scannerError"></div>
+  </div>
+  <div class="dialog-foot">
+    <button type="button" class="btn" id="btnCancelScan">ยกเลิก</button>
+  </div>
+</dialog>
+
+<!-- ============ Add / Edit customer dialog ============ -->
+<dialog id="customerDialog">
+  <form method="dialog" id="customerForm">
+    <div class="dialog-head">
+      <h3 id="customerDialogTitle">เพิ่มลูกค้าใหม่</h3>
+      <button type="button" class="btn-ghost" data-close-dialog="customerDialog">✕</button>
+    </div>
+    <div class="dialog-body">
+      <input type="hidden" id="customerId">
+      <div class="field">
+        <label for="cName">ชื่อลูกค้า</label>
+        <input type="text" id="cName" required>
+      </div>
+      <div class="field">
+        <label for="cGroup">กลุ่มบริษัท</label>
+        <select id="cGroup">
+          <option value="">— ไม่ระบุ —</option>
+          <option value="TCM Consulting Group">TCM Consulting Group</option>
+          <option value="TCM Solution and Service">TCM Solution and Service</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="cPhone">เบอร์โทร</label>
+          <input type="text" id="cPhone">
+        </div>
+        <div class="field">
+          <label for="cAddress">ที่อยู่</label>
+          <input type="text" id="cAddress">
+        </div>
+      </div>
+      <div class="field">
+        <label for="cNote">หมายเหตุ (ไม่บังคับ)</label>
+        <textarea id="cNote" rows="2"></textarea>
+      </div>
+      <div class="form-error" id="customerFormError"></div>
+    </div>
+    <div class="dialog-foot">
+      <button type="button" class="btn" data-close-dialog="customerDialog">ยกเลิก</button>
+      <button type="submit" class="btn btn-primary" id="customerSubmitBtn">บันทึก</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ Add product to customer dialog ============ -->
+<dialog id="customerItemDialog">
+  <form method="dialog" id="customerItemForm">
+    <div class="dialog-head">
+      <h3 id="customerItemDialogTitle">เพิ่มสินค้าให้ลูกค้า</h3>
+      <button type="button" class="btn-ghost" data-close-dialog="customerItemDialog">✕</button>
+    </div>
+    <div class="dialog-body">
+      <input type="hidden" id="ciEditingId">
+      <div class="field" id="ciProductPickerField">
+        <label for="ciProductSearch">สินค้า</label>
+        <div class="combo-wrap">
+          <input type="text" id="ciProductSearch" placeholder="พิมพ์ชื่อสินค้าหรือ SKU เพื่อค้นหา..." autocomplete="off">
+          <input type="hidden" id="ciProduct">
+          <div id="ciProductResults" class="combo-results"></div>
+        </div>
+      </div>
+      <div class="field" id="ciProductStaticField" style="display:none;">
+        <label>สินค้า</label>
+        <div class="mono" id="ciProductStaticName" style="padding:9px 10px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg);"></div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="ciPrice">ราคาต่อหน่วย (บาท)</label>
+          <input type="number" id="ciPrice" min="0" step="0.01" required>
+        </div>
+        <div class="field">
+          <label for="ciQuantity">จำนวน</label>
+          <input type="number" id="ciQuantity" min="1" step="1" value="1" required>
+        </div>
+      </div>
+      <div class="field">
+        <label>รวมเป็นเงิน</label>
+        <div class="mono" id="ciTotalPreview" style="font-size:18px; color: var(--amber);">฿0.00</div>
+      </div>
+      <div class="form-error" id="customerItemFormError"></div>
+    </div>
+    <div class="dialog-foot">
+      <button type="button" class="btn" data-close-dialog="customerItemDialog">ยกเลิก</button>
+      <button type="submit" class="btn btn-primary" id="customerItemSubmitBtn">เพิ่มรายการ</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ Add user dialog ============ -->
+<dialog id="userDialog" data-admin-only>
+  <form method="dialog" id="userForm">
+    <div class="dialog-head">
+      <h3>เพิ่มผู้ใช้งานใหม่</h3>
+      <button type="button" class="btn-ghost" data-close-dialog="userDialog">✕</button>
+    </div>
+    <div class="dialog-body">
+      <div class="field">
+        <label for="uEmail">อีเมล</label>
+        <input type="email" id="uEmail" required>
+      </div>
+      <div class="field">
+        <label for="uPassword">รหัสผ่านเริ่มต้น (อย่างน้อย 6 ตัวอักษร)</label>
+        <input type="text" id="uPassword" required minlength="6">
+      </div>
+      <div class="field">
+        <label>สิทธิ์การใช้งาน</label>
+        <div class="type-toggle">
+          <label><input type="radio" name="uRole" value="staff" checked><span>พนักงาน<br>(เพิ่มสินค้าให้ลูกค้าได้เท่านั้น)</span></label>
+          <label><input type="radio" name="uRole" value="admin"><span>ผู้ดูแลระบบ<br>(แก้ไข/ลบได้ทั้งหมด)</span></label>
+        </div>
+      </div>
+      <div class="form-error" id="userFormError"></div>
+    </div>
+    <div class="dialog-foot">
+      <button type="button" class="btn" data-close-dialog="userDialog">ยกเลิก</button>
+      <button type="submit" class="btn btn-primary" id="userSubmitBtn">เพิ่มผู้ใช้งาน</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ Change own password dialog ============ -->
+<dialog id="changePasswordDialog">
+  <form method="dialog" id="changePasswordForm">
+    <div class="dialog-head">
+      <h3>เปลี่ยนรหัสผ่าน</h3>
+      <button type="button" class="btn-ghost" data-close-dialog="changePasswordDialog">✕</button>
+    </div>
+    <div class="dialog-body">
+      <div class="field">
+        <label for="cpCurrent">รหัสผ่านปัจจุบัน</label>
+        <input type="password" id="cpCurrent" autocomplete="current-password" required>
+      </div>
+      <div class="field">
+        <label for="cpNew">รหัสผ่านใหม่ (อย่างน้อย 6 ตัวอักษร)</label>
+        <input type="password" id="cpNew" autocomplete="new-password" minlength="6" required>
+      </div>
+      <div class="field">
+        <label for="cpConfirm">ยืนยันรหัสผ่านใหม่</label>
+        <input type="password" id="cpConfirm" autocomplete="new-password" minlength="6" required>
+      </div>
+      <div class="form-error" id="changePasswordError"></div>
+    </div>
+    <div class="dialog-foot">
+      <button type="button" class="btn" data-close-dialog="changePasswordDialog">ยกเลิก</button>
+      <button type="submit" class="btn btn-primary" id="changePasswordSubmitBtn">บันทึกรหัสผ่านใหม่</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ Monthly report dialog ============ -->
+<dialog id="monthlyReportDialog" style="width:840px; max-width:96vw;">
+  <div class="dialog-head">
+    <h3>รายงานประจำเดือน</h3>
+    <button type="button" class="btn-ghost" id="btnCloseMonthlyReport">✕</button>
+  </div>
+  <div class="dialog-body">
+    <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+      <div class="field" style="min-width:180px;">
+        <label for="reportMonth">เลือกเดือน</label>
+        <input type="month" id="reportMonth">
+      </div>
+      <button type="button" class="btn btn-primary" id="btnGenerateReport">สร้างรายงาน</button>
+      <div style="flex:1"></div>
+      <button type="button" class="btn" id="btnReportExportCsv" style="display:none;">Export CSV</button>
+      <button type="button" class="btn" id="btnReportExportExcel" style="display:none;">Export Excel</button>
+    </div>
+
+    <div class="form-error" id="reportError"></div>
+
+    <div id="reportSummaryWrap" style="display:none; margin-top:16px;">
+      <div class="tally-row" style="grid-template-columns: repeat(3, 1fr); margin-bottom:16px;">
+        <div class="tally">
+          <div class="label">รับเข้ารวม</div>
+          <div class="value mono" id="reportTotalIn" style="font-size:20px;">-</div>
+        </div>
+        <div class="tally">
+          <div class="label">เบิกออกรวม</div>
+          <div class="value mono" id="reportTotalOut" style="font-size:20px;">-</div>
+        </div>
+        <div class="tally">
+          <div class="label">จำนวนรายการทั้งหมด</div>
+          <div class="value mono" id="reportTxnCount" style="font-size:20px;">-</div>
+        </div>
+      </div>
+      <div style="max-height:360px; overflow-y:auto; border:1px solid var(--border); border-radius:var(--radius);">
+        <table>
+          <thead>
+            <tr>
+              <th>วันที่-เวลา</th>
+              <th>สินค้า</th>
+              <th>ประเภท</th>
+              <th class="num">จำนวน</th>
+              <th>ผู้ทำรายการ</th>
+              <th>หมายเหตุ</th>
+            </tr>
+          </thead>
+          <tbody id="reportBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="dialog-foot">
+    <button type="button" class="btn" id="btnCloseMonthlyReport2">ปิด</button>
+  </div>
+</dialog>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+/* ==================================================================
+   CONFIG — แก้ 2 บรรทัดนี้ให้เป็นค่าจากโปรเจกต์ Supabase ของคุณ
+   (Project Settings → API → Project URL / anon public key)
+   ================================================================== */
+const SUPABASE_URL = "https://akomgzhdrazaalzdgioe.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_XPNYgyWUlPY5RjaOI1r2jA_p-XDGTrl";
+/* ================================================================== */
+
+// ---------------- Idle session timeout (30 นาที ไม่มีการใช้งาน = ออกจากระบบอัตโนมัติ) ----------------
+const IDLE_ACTIVITY_KEY = 'inv_last_activity_at';
+const IDLE_LIMIT_MS = 30 * 60 * 1000;
+let _lastActivityWriteAt = 0;
+
+function markActivity(){
+  const now = Date.now();
+  if (now - _lastActivityWriteAt < 5000) return; // เขียนบ่อยสุดทุก 5 วินาที กัน localStorage ทำงานถี่เกินไป
+  _lastActivityWriteAt = now;
+  try { localStorage.setItem(IDLE_ACTIVITY_KEY, String(now)); } catch(e){}
+}
+
+function clearActivity(){
+  try { localStorage.removeItem(IDLE_ACTIVITY_KEY); } catch(e){}
+}
+
+function isSessionIdleExpired(){
+  let last;
+  try { last = Number(localStorage.getItem(IDLE_ACTIVITY_KEY)); } catch(e){ return false; }
+  if (!last) return false;
+  return (Date.now() - last) > IDLE_LIMIT_MS;
+}
+
+const isConfigured = !SUPABASE_URL.includes("YOUR-PROJECT") && !SUPABASE_ANON_KEY.includes("YOUR-ANON-KEY");
+
+if (!isConfigured) {
+  document.getElementById('setupNotice').hidden = false;
+} else {
+  initAuth();
+}
+
+function initAuth(){
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const loginWrap = document.getElementById('loginWrap');
+  const appEl = document.getElementById('app');
+
+  function showLogin(msg){
+    appEl.hidden = true;
+    loginWrap.hidden = false;
+    document.getElementById('loginFormError').textContent = msg || '';
+  }
+
+  async function enterApp(session){
+    const { data: profile, error } = await sb
+      .from('profiles')
+      .select('*')
+      .eq('id', session.user.id)
+      .maybeSingle();
+
+    if (error || !profile){
+      await sb.auth.signOut();
+      showLogin('ไม่พบสิทธิ์การใช้งานของบัญชีนี้ กรุณาติดต่อผู้ดูแลระบบ');
+      return;
+    }
+    if (!profile.active){
+      await sb.auth.signOut();
+      showLogin('บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ');
+      return;
+    }
+
+    loginWrap.hidden = true;
+    appEl.hidden = false;
+    document.body.classList.remove('role-admin', 'role-staff');
+    const roleIsAdmin = String(profile.role || '').trim().toLowerCase() === 'admin';
+    document.body.classList.add(roleIsAdmin ? 'role-admin' : 'role-staff');
+    document.getElementById('currentUserLabel').textContent =
+      `${profile.email} · ${roleIsAdmin ? 'ผู้ดูแลระบบ' : 'พนักงาน'}`;
+
+    runApp(sb, profile);
+  }
+
+  document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    const btn = document.getElementById('loginSubmitBtn');
+    const errEl = document.getElementById('loginFormError');
+    errEl.textContent = '';
+    btn.disabled = true;
+
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+
+    if (error){
+      btn.disabled = false;
+      errEl.textContent = 'เข้าสู่ระบบไม่สำเร็จ: ' + error.message;
+      return;
+    }
+
+    await sb.from('login_logs').insert({ user_id: data.user.id, email: data.user.email });
+    markActivity();
+
+    btn.disabled = false;
+    await enterApp(data.session);
+  });
+
+  document.getElementById('btnLogout').addEventListener('click', async () => {
+    await sb.auth.signOut();
+    clearActivity();
+    location.reload();
+  });
+
+  (async () => {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session){ showLogin(); return; }
+    if (isSessionIdleExpired()){
+      await sb.auth.signOut();
+      clearActivity();
+      showLogin('เซสชันหมดอายุเนื่องจากไม่มีการใช้งานเกิน 30 นาที กรุณาเข้าสู่ระบบใหม่');
+      return;
+    }
+    await enterApp(session);
+  })();
+}
+
+function runApp(sb, currentProfile){
+  let products = [];
+  let movements = [];
+  let customers = [];
+  let customerItems = [];
+  let users = [];
+  let loginLogs = [];
+  let currentCustomerId = null;
+  let selectedCiProduct = null;
+
+  const isAdmin = String(currentProfile.role || '').trim().toLowerCase() === 'admin';
+
+  // ---------------- Idle session timeout wiring ----------------
+  markActivity();
+  ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'].forEach(evt => {
+    document.addEventListener(evt, markActivity, { passive: true });
+  });
+  setInterval(() => {
+    if (isSessionIdleExpired()){
+      sb.auth.signOut().finally(() => {
+        clearActivity();
+        document.getElementById('app').hidden = true;
+        document.getElementById('loginWrap').hidden = false;
+        document.getElementById('loginFormError').textContent =
+          'เซสชันหมดอายุเนื่องจากไม่มีการใช้งานเกิน 30 นาที กรุณาเข้าสู่ระบบใหม่';
+      });
+    }
+  }, 60000);
+
+  // ---------------- Change own password ----------------
+  const changePasswordDialog = document.getElementById('changePasswordDialog');
+  const changePasswordForm = document.getElementById('changePasswordForm');
+
+  document.getElementById('btnChangePassword').addEventListener('click', () => {
+    document.getElementById('changePasswordError').textContent = '';
+    changePasswordForm.reset();
+    changePasswordDialog.showModal();
+  });
+
+  changePasswordForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById('changePasswordError');
+    errEl.textContent = '';
+
+    const current = document.getElementById('cpCurrent').value;
+    const next = document.getElementById('cpNew').value;
+    const confirm = document.getElementById('cpConfirm').value;
+
+    if (next.length < 6){ errEl.textContent = 'รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร'; return; }
+    if (next !== confirm){ errEl.textContent = 'ยืนยันรหัสผ่านใหม่ไม่ตรงกัน'; return; }
+
+    const submitBtn = document.getElementById('changePasswordSubmitBtn');
+    submitBtn.disabled = true;
+
+    const { error } = await sb.auth.updateUser({
+      password: next,
+      current_password: current
+    });
+
+    submitBtn.disabled = false;
+
+    if (error){
+      errEl.textContent = 'เปลี่ยนรหัสผ่านไม่สำเร็จ: ' +
+        (error.message === 'Invalid login credentials' ? 'รหัสผ่านปัจจุบันไม่ถูกต้อง' : error.message);
+      return;
+    }
+
+    changePasswordDialog.close();
+    showToast('เปลี่ยนรหัสผ่านเรียบร้อย');
+  });
+
+  // ---------------- Monthly report ----------------
+  const monthlyReportDialog = document.getElementById('monthlyReportDialog');
+  let reportRows = [];
+
+  document.getElementById('btnMonthlyReport').addEventListener('click', () => {
+    document.getElementById('reportError').textContent = '';
+    document.getElementById('reportSummaryWrap').style.display = 'none';
+    document.getElementById('btnReportExportCsv').style.display = 'none';
+    document.getElementById('btnReportExportExcel').style.display = 'none';
+    reportRows = [];
+    const now = new Date();
+    document.getElementById('reportMonth').value =
+      `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    monthlyReportDialog.showModal();
+  });
+
+  document.getElementById('btnCloseMonthlyReport').addEventListener('click', () => monthlyReportDialog.close());
+  document.getElementById('btnCloseMonthlyReport2').addEventListener('click', () => monthlyReportDialog.close());
+
+  document.getElementById('btnGenerateReport').addEventListener('click', async () => {
+    const errEl = document.getElementById('reportError');
+    errEl.textContent = '';
+
+    const monthVal = document.getElementById('reportMonth').value;
+    if (!monthVal){ errEl.textContent = 'กรุณาเลือกเดือน'; return; }
+
+    const [y, m] = monthVal.split('-').map(Number);
+    const startDate = new Date(y, m - 1, 1);
+    const endDate = new Date(y, m, 1);
+
+    const genBtn = document.getElementById('btnGenerateReport');
+    genBtn.disabled = true;
+
+    const { data, error } = await sb
+      .from('stock_movements')
+      .select('*, products(name, sku)')
+      .gte('created_at', startDate.toISOString())
+      .lt('created_at', endDate.toISOString())
+      .order('created_at', { ascending: true });
+
+    genBtn.disabled = false;
+
+    if (error){ errEl.textContent = 'โหลดรายงานไม่สำเร็จ: ' + error.message; return; }
+
+    reportRows = data || [];
+    renderMonthlyReport(reportRows);
+  });
+
+  function renderMonthlyReport(rows){
+    const totalIn = rows.filter(r => r.type === 'in').reduce((s, r) => s + Number(r.quantity), 0);
+    const totalOut = rows.filter(r => r.type === 'out').reduce((s, r) => s + Number(r.quantity), 0);
+
+    document.getElementById('reportTotalIn').textContent = '+' + int(totalIn);
+    document.getElementById('reportTotalOut').textContent = '-' + int(totalOut);
+    document.getElementById('reportTxnCount').textContent = int(rows.length);
+
+    const body = document.getElementById('reportBody');
+    body.innerHTML = rows.length
+      ? rows.map(mv => `
+          <tr>
+            <td class="mono">${dt(mv.created_at)}</td>
+            <td>${escapeHtml(mv.products ? mv.products.name : '(สินค้าถูกลบแล้ว)')}</td>
+            <td>${mv.type === 'in'
+              ? '<span class="badge badge-move-in">รับเข้า</span>'
+              : '<span class="badge badge-move-out">เบิกออก</span>'}</td>
+            <td class="num mono">${mv.type === 'in' ? '+' : '-'}${int(mv.quantity)}</td>
+            <td>${escapeHtml(mv.user_email || '-')}</td>
+            <td>${escapeHtml(mv.note || '-')}</td>
+          </tr>
+        `).join('')
+      : `<tr><td colspan="6" class="empty-note">ไม่มีรายการเคลื่อนไหวในเดือนนี้</td></tr>`;
+
+    document.getElementById('reportSummaryWrap').style.display = '';
+    document.getElementById('btnReportExportCsv').style.display = rows.length ? '' : 'none';
+    document.getElementById('btnReportExportExcel').style.display = rows.length ? '' : 'none';
+  }
+
+  document.getElementById('btnReportExportCsv').addEventListener('click', () => exportMonthlyReport('csv'));
+  document.getElementById('btnReportExportExcel').addEventListener('click', () => exportMonthlyReport('xlsx'));
+
+  function exportMonthlyReport(format){
+    if (!reportRows.length) return;
+    const monthVal = document.getElementById('reportMonth').value;
+
+    const rows = reportRows.map(mv => ({
+      'วันที่-เวลา': dt(mv.created_at),
+      'สินค้า': mv.products ? mv.products.name : '(สินค้าถูกลบแล้ว)',
+      'SKU': mv.products ? mv.products.sku : '',
+      'ประเภท': mv.type === 'in' ? 'รับเข้า' : 'เบิกออก',
+      'จำนวน': Number(mv.quantity),
+      'ผู้ทำรายการ': mv.user_email || '',
+      'หมายเหตุ': mv.note || ''
+    }));
+
+    const filenameBase = `monthly-report-${monthVal}`;
+
+    if (format === 'csv'){
+      const headers = Object.keys(rows[0]);
+      const csvLines = [headers.join(',')].concat(
+        rows.map(r => headers.map(h => {
+          const v = r[h] === undefined || r[h] === null ? '' : String(r[h]);
+          return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+        }).join(','))
+      );
+      const csvContent = '\uFEFF' + csvLines.join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      downloadBlob(blob, filenameBase + '.csv');
+    } else {
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'รายงานประจำเดือน');
+      XLSX.writeFile(wb, filenameBase + '.xlsx');
+    }
+  }
+
+  const money = (n) => Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const int = (n) => Number(n || 0).toLocaleString('th-TH');
+  const dt = (iso) => new Date(iso).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
+
+  function showToast(msg, isError){
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.toggle('error', !!isError);
+    el.classList.add('show');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => el.classList.remove('show'), 3200);
+  }
+
+  function escapeHtml(str){
+    return String(str).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  // ---------------- Data loading ----------------
+  async function loadAll(){
+    const [{ data: p, error: pErr }, { data: m, error: mErr }] = await Promise.all([
+      sb.from('products').select('*').order('name', { ascending: true }),
+      sb.from('stock_movements').select('*, products(name, sku)').order('created_at', { ascending: false }).limit(100)
+    ]);
+
+    if (pErr) { showToast('โหลดข้อมูลสินค้าไม่สำเร็จ: ' + pErr.message, true); return; }
+    if (mErr) { showToast('โหลดประวัติไม่สำเร็จ: ' + mErr.message, true); return; }
+
+    products = p || [];
+    movements = m || [];
+
+    renderStats();
+    renderLowStock();
+    renderProducts();
+    renderHistory();
+  }
+
+  async function loadCustomers(){
+    const [{ data: c, error: cErr }, { data: ci, error: ciErr }] = await Promise.all([
+      sb.from('customers').select('*').order('created_at', { ascending: false }),
+      sb.from('customer_items').select('*').order('created_at', { ascending: false })
+    ]);
+
+    if (cErr) { showToast('โหลดข้อมูลลูกค้าไม่สำเร็จ: ' + cErr.message, true); return; }
+    if (ciErr) { showToast('โหลดรายการสินค้าลูกค้าไม่สำเร็จ: ' + ciErr.message, true); return; }
+
+    customers = c || [];
+    customerItems = ci || [];
+
+    renderCustomers(document.getElementById('customerSearch') ? document.getElementById('customerSearch').value : '');
+    if (currentCustomerId) renderCustomerDetail(currentCustomerId);
+  }
+
+  async function loadUsers(){
+    if (!isAdmin) return;
+    const [{ data: u, error: uErr }, { data: l, error: lErr }] = await Promise.all([
+      sb.from('profiles').select('*').order('created_at', { ascending: false }),
+      sb.from('login_logs').select('*').order('logged_in_at', { ascending: false }).limit(100)
+    ]);
+    if (uErr){ showToast('โหลดข้อมูลผู้ใช้งานไม่สำเร็จ: ' + uErr.message, true); return; }
+    if (lErr){ showToast('โหลดประวัติการเข้าสู่ระบบไม่สำเร็จ: ' + lErr.message, true); return; }
+    users = u || [];
+    loginLogs = l || [];
+    renderUsers();
+    renderLoginLogs();
+  }
+
+  // ---------------- Stats ----------------
+  function renderStats(){
+    const totalValue = products.reduce((sum, p) => sum + (Number(p.quantity) * Number(p.cost_price)), 0);
+    const lowStock = products.filter(p => Number(p.quantity) <= Number(p.reorder_point));
+    const todayStr = new Date().toDateString();
+    const todayMoves = movements.filter(m => new Date(m.created_at).toDateString() === todayStr);
+
+    document.getElementById('statTotalValue').textContent = '฿' + money(totalValue);
+    document.getElementById('statProductCount').textContent = int(products.length);
+    document.getElementById('statLowStock').textContent = int(lowStock.length);
+    document.getElementById('statMovementsToday').textContent = int(todayMoves.length);
+  }
+
+  // ---------------- Low stock panel ----------------
+  function renderLowStock(){
+    const list = document.getElementById('lowStockList');
+    const lowStock = products
+      .filter(p => Number(p.quantity) <= Number(p.reorder_point))
+      .sort((a, b) => (a.quantity - a.reorder_point) - (b.quantity - b.reorder_point));
+
+    document.getElementById('lowStockCount').textContent = lowStock.length ? `(${lowStock.length})` : '';
+
+    if (!lowStock.length){
+      list.innerHTML = '<div class="empty-note">ไม่มีสินค้าใกล้หมดในตอนนี้</div>';
+      return;
+    }
+
+    list.innerHTML = lowStock.map(p => `
+      <div class="low-stock-row">
+        <div>
+          <span class="name">${escapeHtml(p.name)}</span>
+          <span class="sku mono">${escapeHtml(p.sku)}</span>
+        </div>
+        <div class="qty mono">${int(p.quantity)} / ${int(p.reorder_point)} ${escapeHtml(p.unit || '')}</div>
+      </div>
+    `).join('');
+  }
+
+  // ---------------- Products table ----------------
+  function stockBadge(p){
+    if (Number(p.quantity) <= 0) return `<span class="badge badge-out">หมด</span>`;
+    if (Number(p.quantity) <= Number(p.reorder_point)) return `<span class="badge badge-low">ใกล้หมด</span>`;
+    return `<span class="badge badge-ok">ปกติ</span>`;
+  }
+
+  function renderProducts(filterText){
+    const body = document.getElementById('productsBody');
+    const q = (filterText || '').trim().toLowerCase();
+    const rows = products.filter(p =>
+      !q || p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)
+    );
+
+    document.getElementById('productCount').textContent = `(${products.length})`;
+
+    if (!rows.length){
+      body.innerHTML = `<tr><td colspan="7" class="empty-note">ไม่พบสินค้าที่ค้นหา</td></tr>`;
+      return;
+    }
+
+    body.innerHTML = rows.map(p => `
+      <tr data-id="${p.id}">
+        <td>
+          <div class="product-name">${escapeHtml(p.name)}</div>
+          <div class="product-sku mono">${escapeHtml(p.sku)}</div>
+        </td>
+        <td>${escapeHtml(p.category || '-')}</td>
+        <td class="num mono">${int(p.quantity)} ${escapeHtml(p.unit || '')} ${stockBadge(p)}</td>
+        <td class="num mono">${int(p.reorder_point)}</td>
+        <td class="num mono">฿${money(p.cost_price)}</td>
+        <td class="num mono">฿${money(p.quantity * p.cost_price)}</td>
+        <td>
+          <div class="row-actions">
+            <button class="btn-ghost" data-edit="${p.id}" data-admin-only title="แก้ไข">แก้ไข</button>
+            <button class="btn-ghost" data-delete="${p.id}" data-admin-only title="ลบ">ลบ</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  // ---------------- History table ----------------
+  function renderHistory(){
+    const body = document.getElementById('historyBody');
+    document.getElementById('historyCount').textContent = `(${movements.length})`;
+
+    if (!movements.length){
+      body.innerHTML = `<tr><td colspan="6" class="empty-note">ยังไม่มีประวัติการเคลื่อนไหว</td></tr>`;
+      return;
+    }
+
+    body.innerHTML = movements.map(m => `
+      <tr>
+        <td class="mono">${dt(m.created_at)}</td>
+        <td>${escapeHtml(m.products ? m.products.name : '(สินค้าถูกลบแล้ว)')}</td>
+        <td>${m.type === 'in'
+          ? '<span class="badge badge-move-in">รับเข้า</span>'
+          : '<span class="badge badge-move-out">เบิกออก</span>'}</td>
+        <td class="num mono">${m.type === 'in' ? '+' : '-'}${int(m.quantity)}</td>
+        <td>${escapeHtml(m.user_email || '-')}</td>
+        <td>${escapeHtml(m.note || '-')}</td>
+      </tr>
+    `).join('');
+  }
+
+  // ---------------- SKU search / barcode scan for stock movements ----------------
+  let selectedMovementProduct = null;
+  let html5QrScanner = null;
+
+  function resetMovementProductPicker(){
+    selectedMovementProduct = null;
+    document.getElementById('mSku').value = '';
+    document.getElementById('mProduct').value = '';
+    document.getElementById('mProductDetail').textContent = '-';
+    document.getElementById('mSkuResults').style.display = 'none';
+    document.getElementById('mUnitPrice').value = '';
+    document.getElementById('mQuantity').value = 1;
+  }
+
+  function selectMovementProduct(p){
+    selectedMovementProduct = p;
+    document.getElementById('mProduct').value = p.id;
+    document.getElementById('mSku').value = p.sku;
+    document.getElementById('mProductDetail').textContent = `${p.name} — คงเหลือ ${int(p.quantity)} ${p.unit || ''}`;
+    document.getElementById('mSkuResults').style.display = 'none';
+    if (document.getElementById('mPriceField').style.display !== 'none'){
+      document.getElementById('mUnitPrice').value = p.cost_price;
+    }
+  }
+
+  function renderMSkuResults(query){
+    const box = document.getElementById('mSkuResults');
+    const q = (query || '').trim().toLowerCase();
+
+    if (!q){ box.style.display = 'none'; return; }
+
+    const matches = products.filter(p => p.sku.toLowerCase().includes(q) || p.name.toLowerCase().includes(q));
+
+    if (!matches.length){
+      box.innerHTML = '<div class="combo-empty">ไม่พบสินค้าตามรหัสหรือชื่อนี้</div>';
+      box.style.display = 'block';
+      return;
+    }
+
+    box.innerHTML = matches.slice(0, 20).map(p => `
+      <div class="combo-item" data-id="${p.id}">
+        <div class="combo-item-name">${escapeHtml(p.name)}</div>
+        <div class="combo-item-meta mono">${escapeHtml(p.sku)} · คงเหลือ ${int(p.quantity)} ${escapeHtml(p.unit || '')}</div>
+      </div>
+    `).join('');
+    box.style.display = 'block';
+  }
+
+  function handleSkuInput(value){
+    const q = (value || '').trim();
+    const exact = products.find(p => p.sku.toLowerCase() === q.toLowerCase());
+    if (exact){
+      selectMovementProduct(exact);
+      return;
+    }
+    selectedMovementProduct = null;
+    document.getElementById('mProduct').value = '';
+    document.getElementById('mProductDetail').textContent = q ? 'ไม่พบสินค้าตามรหัสนี้ — เลือกจากรายการด้านล่าง' : '-';
+    renderMSkuResults(q);
+  }
+
+  document.getElementById('mSku').addEventListener('input', (e) => handleSkuInput(e.target.value));
+  document.getElementById('mSku').addEventListener('focus', (e) => { if (e.target.value) renderMSkuResults(e.target.value); });
+  document.getElementById('mSkuResults').addEventListener('click', (e) => {
+    const item = e.target.closest('.combo-item');
+    if (!item) return;
+    const p = products.find(x => x.id === item.dataset.id);
+    if (p) selectMovementProduct(p);
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#mSku') && !e.target.closest('#mSkuResults')){
+      document.getElementById('mSkuResults').style.display = 'none';
+    }
+  });
+
+  const scannerDialog = document.getElementById('scannerDialog');
+
+  function stopScanner(){
+    if (html5QrScanner){
+      const s = html5QrScanner;
+      html5QrScanner = null;
+      s.stop().then(() => s.clear()).catch(() => {});
+    }
+  }
+
+  async function openScanner(){
+    document.getElementById('scannerError').textContent = '';
+    if (typeof Html5Qrcode === 'undefined'){
+      document.getElementById('scannerError').textContent = 'โหลดตัวสแกนไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองใหม่';
+      scannerDialog.showModal();
+      return;
+    }
+    scannerDialog.showModal();
+    try {
+      html5QrScanner = new Html5Qrcode('scannerContainer');
+      await html5QrScanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 250, height: 150 } },
+        (decodedText) => {
+          stopScanner();
+          scannerDialog.close();
+          document.getElementById('mSku').value = decodedText;
+          handleSkuInput(decodedText);
+        },
+        () => {}
+      );
+    } catch (err){
+      document.getElementById('scannerError').textContent = 'ไม่สามารถเปิดกล้องได้: ' + (err && err.message ? err.message : err);
+    }
+  }
+
+  document.getElementById('btnScanSku').addEventListener('click', openScanner);
+  document.getElementById('btnCloseScannerDialog').addEventListener('click', () => { stopScanner(); scannerDialog.close(); });
+  document.getElementById('btnCancelScan').addEventListener('click', () => { stopScanner(); scannerDialog.close(); });
+  scannerDialog.addEventListener('close', stopScanner);
+
+  // ---------------- Movement dialog: customer picker (for เบิกออก linked to a customer) ----------------
+  function movementMode(){
+    return document.querySelector('input[name="mType"]:checked').value;
+  }
+
+  function movementCustomerId(){
+    return document.getElementById('mCustomerId').value || null;
+  }
+
+  function renderMCustomerResults(query){
+    const box = document.getElementById('mCustomerResults');
+    const q = (query || '').trim().toLowerCase();
+    const matches = !q ? customers : customers.filter(c => c.name.toLowerCase().includes(q));
+
+    if (!matches.length){
+      box.innerHTML = '<div class="combo-empty">ไม่พบลูกค้า</div>';
+      box.style.display = 'block';
+      return;
+    }
+
+    box.innerHTML = matches.slice(0, 20).map(c => `
+      <div class="combo-item" data-id="${c.id}">
+        <div class="combo-item-name">${escapeHtml(c.name)}</div>
+        <div class="combo-item-meta mono">${escapeHtml(c.phone || '')}</div>
+      </div>
+    `).join('');
+    box.style.display = 'block';
+  }
+
+  document.getElementById('mCustomerSearch').addEventListener('input', (e) => {
+    document.getElementById('mCustomerId').value = '';
+    renderMCustomerResults(e.target.value);
+    onMovementModeOrCustomerChanged();
+  });
+  document.getElementById('mCustomerSearch').addEventListener('focus', (e) => renderMCustomerResults(e.target.value));
+  document.getElementById('mCustomerResults').addEventListener('click', (e) => {
+    const item = e.target.closest('.combo-item');
+    if (!item) return;
+    const c = customers.find(x => x.id === item.dataset.id);
+    if (!c) return;
+    document.getElementById('mCustomerId').value = c.id;
+    document.getElementById('mCustomerSearch').value = c.name;
+    document.getElementById('mCustomerResults').style.display = 'none';
+    onMovementModeOrCustomerChanged();
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#mCustomerSearch') && !e.target.closest('#mCustomerResults')){
+      document.getElementById('mCustomerResults').style.display = 'none';
+    }
+  });
+
+  // ---------------- Movement dialog: multi-line cart ----------------
+  let movementCart = [];
+
+  function onMovementModeOrCustomerChanged(){
+    if (movementCart.length){
+      movementCart = [];
+      showToast('ล้างรายการที่เพิ่มไว้ เนื่องจากเปลี่ยนประเภทรายการ/ลูกค้า');
+    }
+    updateMovementModeUI();
+  }
+
+  function updateMovementModeUI(){
+    const type = movementMode();
+    const custId = movementCustomerId();
+    document.getElementById('mCustomerField').style.display = type === 'out' ? '' : 'none';
+    if (type !== 'out'){
+      document.getElementById('mCustomerId').value = '';
+      document.getElementById('mCustomerSearch').value = '';
+    }
+    const needsPrice = type === 'out' && !!custId;
+    document.getElementById('mPriceField').style.display = needsPrice ? '' : 'none';
+    renderCartTable();
+  }
+
+  document.getElementById('mTypeIn').addEventListener('change', onMovementModeOrCustomerChanged);
+  document.getElementById('mTypeOut').addEventListener('change', onMovementModeOrCustomerChanged);
+
+  function renderCartTable(){
+    const showPrice = movementMode() === 'out' && !!movementCustomerId();
+    document.getElementById('cartCount').textContent = movementCart.length;
+
+    document.getElementById('cartTableHead').innerHTML = showPrice
+      ? `<th>สินค้า</th><th class="num">ราคา/หน่วย</th><th class="num">จำนวน</th><th class="num">รวม</th><th></th>`
+      : `<th>สินค้า</th><th class="num">จำนวน</th><th></th>`;
+
+    const body = document.getElementById('cartTableBody');
+
+    if (!movementCart.length){
+      body.innerHTML = `<tr><td class="cart-empty" colspan="${showPrice ? 5 : 3}">ยังไม่มีรายการ</td></tr>`;
+      document.getElementById('cartGrandTotalWrap').style.display = 'none';
+      return;
+    }
+
+    let grandTotal = 0;
+    body.innerHTML = movementCart.map((line, idx) => {
+      if (showPrice){
+        const lineTotal = line.quantity * (line.unitPrice || 0);
+        grandTotal += lineTotal;
+        return `
+          <tr>
+            <td>${escapeHtml(line.name)}<br><span style="color:#888; font-size:11px;">${escapeHtml(line.sku)}</span></td>
+            <td class="num">฿${money(line.unitPrice || 0)}</td>
+            <td class="num">${int(line.quantity)} ${escapeHtml(line.unit)}</td>
+            <td class="num">฿${money(lineTotal)}</td>
+            <td><button type="button" class="cart-remove-btn" data-remove-line="${idx}">ลบ</button></td>
+          </tr>
+        `;
+      }
+      return `
+        <tr>
+          <td>${escapeHtml(line.name)}<br><span style="color:#888; font-size:11px;">${escapeHtml(line.sku)}</span></td>
+          <td class="num">${int(line.quantity)} ${escapeHtml(line.unit)}</td>
+          <td><button type="button" class="cart-remove-btn" data-remove-line="${idx}">ลบ</button></td>
+        </tr>
+      `;
+    }).join('');
+
+    document.getElementById('cartGrandTotalWrap').style.display = showPrice ? '' : 'none';
+    if (showPrice) document.getElementById('cartGrandTotal').textContent = '฿' + money(grandTotal);
+  }
+
+  document.getElementById('cartTableBody').addEventListener('click', (e) => {
+    const idx = e.target.dataset.removeLine;
+    if (idx === undefined) return;
+    movementCart.splice(Number(idx), 1);
+    renderCartTable();
+  });
+
+  document.getElementById('btnClearCart').addEventListener('click', () => {
+    if (!movementCart.length) return;
+    if (!confirm('ล้างรายการทั้งหมดที่เพิ่มไว้ใช่หรือไม่?')) return;
+    movementCart = [];
+    renderCartTable();
+  });
+
+  document.getElementById('btnAddCartLine').addEventListener('click', () => {
+    const errEl = document.getElementById('mLineError');
+    errEl.textContent = '';
+
+    const type = movementMode();
+    const custId = movementCustomerId();
+    const needsPrice = type === 'out' && !!custId;
+
+    const productId = document.getElementById('mProduct').value;
+    const product = products.find(p => p.id === productId);
+    const qty = Number(document.getElementById('mQuantity').value);
+    const price = needsPrice ? Number(document.getElementById('mUnitPrice').value) : null;
+
+    if (!product){ errEl.textContent = 'กรุณาระบุหรือสแกน SKU สินค้าที่ถูกต้องก่อน'; return; }
+    if (!qty || qty <= 0){ errEl.textContent = 'กรุณากรอกจำนวนให้ถูกต้อง'; return; }
+    if (needsPrice && (Number.isNaN(price) || price < 0)){ errEl.textContent = 'กรุณากรอกราคาต่อหน่วยให้ถูกต้อง'; return; }
+
+    if (type === 'out'){
+      const alreadyInCart = movementCart
+        .filter(l => l.productId === product.id)
+        .reduce((s, l) => s + l.quantity, 0);
+      if (alreadyInCart + qty > product.quantity){
+        errEl.textContent = `สต็อกคงเหลือมีแค่ ${product.quantity} ${product.unit || ''} (ในรายการที่เพิ่มไว้แล้วรวม ${alreadyInCart})`;
+        return;
+      }
+    }
+
+    movementCart.push({
+      productId: product.id,
+      sku: product.sku,
+      name: product.name,
+      unit: product.unit || '',
+      quantity: qty,
+      unitPrice: price
+    });
+
+    document.getElementById('mSku').value = '';
+    document.getElementById('mProduct').value = '';
+    document.getElementById('mProductDetail').textContent = '-';
+    document.getElementById('mQuantity').value = 1;
+    document.getElementById('mUnitPrice').value = '';
+    document.getElementById('mSkuResults').style.display = 'none';
+    document.getElementById('mSku').focus();
+
+    renderCartTable();
+  });
+
+  // ---------------- Customers ----------------
+  let customerGroupFilter = '';
+
+  function renderCustomers(filterText){
+    const body = document.getElementById('customersBody');
+    const q = (filterText || '').trim().toLowerCase();
+    const groupFiltered = customerGroupFilter
+      ? customers.filter(c => (c.company_group || '') === customerGroupFilter)
+      : customers;
+    const rows = groupFiltered.filter(c => !q || c.name.toLowerCase().includes(q));
+
+    document.getElementById('customerListTitle').textContent = customerGroupFilter || 'ลูกค้า';
+    document.getElementById('customerListSubtitle').textContent = customerGroupFilter
+      ? `รายชื่อลูกค้าในกลุ่ม ${customerGroupFilter}`
+      : 'จัดการฐานข้อมูลลูกค้า และรายการสินค้าที่ขายให้แต่ละราย';
+    document.getElementById('customerCount').textContent = `(${groupFiltered.length})`;
+
+    if (!rows.length){
+      body.innerHTML = `<tr><td colspan="6" class="empty-note">${groupFiltered.length ? 'ไม่พบลูกค้าที่ค้นหา' : 'ยังไม่มีลูกค้าในกลุ่มนี้'}</td></tr>`;
+      return;
+    }
+
+    body.innerHTML = rows.map(c => {
+      const items = customerItems.filter(i => i.customer_id === c.id);
+      const total = items.reduce((s, i) => s + Number(i.unit_price) * Number(i.quantity), 0);
+      return `
+        <tr data-id="${c.id}">
+          <td class="product-name">${escapeHtml(c.name)}</td>
+          <td>${escapeHtml(c.phone || '-')}</td>
+          <td>${escapeHtml(c.company_group || '-')}</td>
+          <td class="num mono">${int(items.length)}</td>
+          <td class="num mono">฿${money(total)}</td>
+          <td>
+            <div class="row-actions">
+              <button class="btn-ghost" data-view="${c.id}">ดูรายละเอียด</button>
+              <button class="btn-ghost" data-edit-c="${c.id}" data-admin-only>แก้ไข</button>
+              <button class="btn-ghost" data-delete-c="${c.id}" data-admin-only>ลบ</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+
+  function openCustomerDetail(id){
+    currentCustomerId = id;
+    document.getElementById('customerListWrap').style.display = 'none';
+    document.getElementById('customerDetailWrap').style.display = 'block';
+    renderCustomerDetail(id);
+  }
+
+  function backToCustomerList(){
+    currentCustomerId = null;
+    document.getElementById('customerDetailWrap').style.display = 'none';
+    document.getElementById('customerListWrap').style.display = 'block';
+  }
+
+  function renderCustomerDetail(id){
+    const customer = customers.find(c => c.id === id);
+    if (!customer){ backToCustomerList(); return; }
+
+    document.getElementById('customerDetailName').textContent = customer.name;
+    document.getElementById('customerDetailMeta').textContent =
+      [customer.phone, customer.address].filter(Boolean).join(' · ') || 'ไม่มีข้อมูลติดต่อเพิ่มเติม';
+
+    const items = customerItems.filter(i => i.customer_id === id);
+    document.getElementById('customerItemCount').textContent = `(${items.length})`;
+    const body = document.getElementById('customerItemsBody');
+
+    if (!items.length){
+      body.innerHTML = `<tr><td colspan="5" class="empty-note">ยังไม่มีสินค้าในรายการของลูกค้ารายนี้</td></tr>`;
+      return;
+    }
+
+    let grandTotal = 0;
+    const rowsHtml = items.map(i => {
+      const lineTotal = Number(i.unit_price) * Number(i.quantity);
+      grandTotal += lineTotal;
+      return `
+        <tr data-id="${i.id}">
+          <td>
+            <div class="product-name">${escapeHtml(i.product_name)}</div>
+            <div class="product-sku mono">${escapeHtml(i.product_sku || '')}</div>
+          </td>
+          <td class="num mono">฿${money(i.unit_price)}</td>
+          <td class="num mono">${int(i.quantity)}</td>
+          <td class="num mono">฿${money(lineTotal)}</td>
+          <td><div class="row-actions">
+            <button class="btn-ghost" data-edit-ci="${i.id}">แก้ไข</button>
+            <button class="btn-ghost" data-delete-ci="${i.id}">ลบ</button>
+          </div></td>
+        </tr>
+      `;
+    }).join('');
+
+    body.innerHTML = rowsHtml + `
+      <tr>
+        <td colspan="3" style="text-align:right; font-weight:600;">รวมทั้งหมด</td>
+        <td class="num mono" style="font-weight:600; color: var(--amber);">฿${money(grandTotal)}</td>
+        <td></td>
+      </tr>
+    `;
+  }
+
+  // ---------------- Users (admin only) ----------------
+  function renderUsers(){
+    const body = document.getElementById('usersBody');
+    document.getElementById('userCount').textContent = `(${users.length})`;
+    if (!users.length){
+      body.innerHTML = `<tr><td colspan="4" class="empty-note">ยังไม่มีผู้ใช้งาน</td></tr>`;
+      return;
+    }
+    body.innerHTML = users.map(u => `
+      <tr data-id="${u.id}">
+        <td>${escapeHtml(u.email)}</td>
+        <td>${u.role === 'admin' ? 'ผู้ดูแลระบบ' : 'พนักงาน'}</td>
+        <td>${u.active ? '<span class="badge badge-ok">ใช้งานอยู่</span>' : '<span class="badge badge-out">ถูกระงับ</span>'}</td>
+        <td>
+          <div class="row-actions">
+            <button class="btn-ghost" data-toggle-role="${u.id}">${u.role === 'admin' ? 'ลดเป็นพนักงาน' : 'ตั้งเป็นแอดมิน'}</button>
+            <button class="btn-ghost" data-toggle-active="${u.id}">${u.active ? 'ระงับการใช้งาน' : 'เปิดใช้งาน'}</button>
+            <button class="btn-ghost" data-delete-user="${u.id}" data-email="${escapeHtml(u.email)}" ${u.id === currentProfile.id ? 'disabled title="ไม่สามารถลบบัญชีตัวเองได้"' : ''}>ลบ</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function renderLoginLogs(){
+    const body = document.getElementById('loginLogsBody');
+    document.getElementById('loginLogCount').textContent = `(${loginLogs.length})`;
+    if (!loginLogs.length){
+      body.innerHTML = `<tr><td colspan="2" class="empty-note">ยังไม่มีประวัติการเข้าสู่ระบบ</td></tr>`;
+      return;
+    }
+    body.innerHTML = loginLogs.map(l => `
+      <tr><td class="mono">${dt(l.logged_in_at)}</td><td>${escapeHtml(l.email || '-')}</td></tr>
+    `).join('');
+  }
+
+  // ---------------- Tab switching ----------------
+  const sections = ['overview', 'products', 'customers', 'history', 'users'].map(id => document.getElementById(id));
+  const navLinks = document.querySelectorAll('.nav-link');
+
+  function updateNavActiveState(targetId){
+    navLinks.forEach(a => {
+      const href = a.getAttribute('href').slice(1);
+      if (href !== targetId){ a.classList.remove('active'); return; }
+      if (targetId === 'customers'){
+        const linkGroup = a.dataset.customerGroup || '';
+        a.classList.toggle('active', linkGroup === customerGroupFilter);
+      } else {
+        a.classList.add('active');
+      }
+    });
+  }
+
+  function showTab(targetId){
+    sections.forEach(s => s.classList.toggle('active', s.id === targetId));
+    updateNavActiveState(targetId);
+    window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+    history.replaceState(null, '', '#' + targetId);
+  }
+
+  navLinks.forEach(a => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      const targetId = a.getAttribute('href').slice(1);
+      if ((targetId === 'users' || targetId === 'history') && !isAdmin) return;
+      if (targetId === 'customers'){
+        customerGroupFilter = a.dataset.customerGroup || '';
+        backToCustomerList();
+        renderCustomers(document.getElementById('customerSearch').value);
+      }
+      showTab(targetId);
+      if (targetId === 'users') loadUsers();
+    });
+  });
+
+  const initialHashTab = location.hash.slice(1);
+  const adminOnlyTabs = ['users', 'history'];
+  const initialTab = (sections.some(s => s.id === initialHashTab) && (!adminOnlyTabs.includes(initialHashTab) || isAdmin))
+    ? initialHashTab
+    : 'overview';
+  showTab(initialTab);
+  if (initialTab === 'users') loadUsers();
+
+  // ---------------- Search ----------------
+  document.getElementById('productSearch').addEventListener('input', (e) => renderProducts(e.target.value));
+  document.getElementById('customerSearch').addEventListener('input', (e) => renderCustomers(e.target.value));
+
+  // ---------------- Dialog helpers ----------------
+  document.querySelectorAll('[data-close-dialog]').forEach(btn => {
+    btn.addEventListener('click', () => document.getElementById(btn.dataset.closeDialog).close());
+  });
+
+  // ---------------- Add / edit product (admin only) ----------------
+  const productDialog = document.getElementById('productDialog');
+  const productForm = document.getElementById('productForm');
+
+  document.getElementById('btnAddProduct').addEventListener('click', () => openProductDialog());
+
+  document.getElementById('productsBody').addEventListener('click', (e) => {
+    const editId = e.target.dataset.edit;
+    const delId = e.target.dataset.delete;
+    if (editId) openProductDialog(products.find(p => p.id === editId));
+    if (delId) deleteProduct(delId);
+  });
+
+  function openProductDialog(product){
+    document.getElementById('productFormError').textContent = '';
+    document.getElementById('productDialogTitle').textContent = product ? 'แก้ไขสินค้า' : 'เพิ่มสินค้าใหม่';
+    document.getElementById('productId').value = product ? product.id : '';
+    document.getElementById('fSku').value = product ? product.sku : '';
+    document.getElementById('fName').value = product ? product.name : '';
+    document.getElementById('fCategory').value = product ? (product.category || '') : '';
+    document.getElementById('fUnit').value = product ? (product.unit || 'ชิ้น') : 'ชิ้น';
+    document.getElementById('fQuantity').value = product ? product.quantity : 0;
+    document.getElementById('fReorder').value = product ? product.reorder_point : 0;
+    document.getElementById('fCost').value = product ? product.cost_price : 0;
+    productDialog.showModal();
+  }
+
+  productForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('productId').value;
+    const payload = {
+      sku: document.getElementById('fSku').value.trim(),
+      name: document.getElementById('fName').value.trim(),
+      category: document.getElementById('fCategory').value.trim() || null,
+      unit: document.getElementById('fUnit').value.trim() || 'ชิ้น',
+      quantity: Number(document.getElementById('fQuantity').value),
+      reorder_point: Number(document.getElementById('fReorder').value),
+      cost_price: Number(document.getElementById('fCost').value),
+    };
+
+    if (!payload.sku || !payload.name){
+      document.getElementById('productFormError').textContent = 'กรุณากรอกรหัสสินค้าและชื่อสินค้า';
+      return;
+    }
+
+    const submitBtn = document.getElementById('productSubmitBtn');
+    submitBtn.disabled = true;
+
+    const { error } = id
+      ? await sb.from('products').update(payload).eq('id', id)
+      : await sb.from('products').insert(payload);
+
+    submitBtn.disabled = false;
+
+    if (error){
+      document.getElementById('productFormError').textContent = error.message.includes('duplicate')
+        ? 'รหัสสินค้า (SKU) นี้มีอยู่แล้ว'
+        : 'บันทึกไม่สำเร็จ: ' + error.message;
+      return;
+    }
+
+    productDialog.close();
+    showToast(id ? 'แก้ไขสินค้าเรียบร้อย' : 'เพิ่มสินค้าเรียบร้อย');
+    loadAll();
+  });
+
+  async function deleteProduct(id){
+    const product = products.find(p => p.id === id);
+    if (!product) return;
+    if (!confirm(`ลบสินค้า "${product.name}" ใช่หรือไม่? ประวัติที่เกี่ยวข้องจะถูกลบไปด้วย`)) return;
+
+    const { error } = await sb.from('products').delete().eq('id', id);
+    if (error){ showToast('ลบไม่สำเร็จ: ' + error.message, true); return; }
+    showToast('ลบสินค้าเรียบร้อย');
+    loadAll();
+  }
+
+  // ---------------- Record movement (admin only) ----------------
+  const movementDialog = document.getElementById('movementDialog');
+  const movementForm = document.getElementById('movementForm');
+
+  document.getElementById('btnRecordMovement').addEventListener('click', () => {
+    document.getElementById('movementFormError').textContent = '';
+    document.getElementById('mLineError').textContent = '';
+    document.getElementById('mNote').value = '';
+    document.getElementById('mCustomerId').value = '';
+    document.getElementById('mCustomerSearch').value = '';
+    document.getElementById('mCustomerResults').style.display = 'none';
+    movementCart = [];
+    resetMovementProductPicker();
+    updateMovementModeUI();
+    movementDialog.showModal();
+  });
+
+  movementForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById('movementFormError');
+    errEl.textContent = '';
+
+    if (!movementCart.length){ errEl.textContent = 'กรุณาเพิ่มอย่างน้อย 1 รายการก่อนบันทึก'; return; }
+
+    const type = movementMode();
+    const custId = movementCustomerId();
+    const note = document.getElementById('mNote').value.trim() || null;
+
+    const submitBtn = document.getElementById('movementSubmitBtn');
+    submitBtn.disabled = true;
+
+    const lines = movementCart.map(l => ({
+      product_id: l.productId,
+      quantity: l.quantity,
+      unit_price: l.unitPrice
+    }));
+
+    const { error } = await sb.rpc('record_movement_batch', {
+      p_type: type, p_customer_id: custId, p_note: note, p_lines: lines
+    });
+
+    submitBtn.disabled = false;
+
+    if (error){
+      errEl.textContent = 'บันทึกไม่สำเร็จ: ' + error.message;
+      return;
+    }
+
+    movementCart = [];
+    movementDialog.close();
+    showToast(type === 'in' ? 'บันทึกรับเข้าเรียบร้อย' : 'บันทึกเบิกออกเรียบร้อย');
+    await loadAll();
+    await loadCustomers();
+  });
+
+  // ---------------- Add / edit customer (admin only) ----------------
+  const customerDialog = document.getElementById('customerDialog');
+  const customerForm = document.getElementById('customerForm');
+
+  document.getElementById('btnAddCustomer').addEventListener('click', () => openCustomerDialog());
+
+  document.getElementById('customersBody').addEventListener('click', (e) => {
+    const viewId = e.target.dataset.view;
+    const editId = e.target.dataset.editC;
+    const delId = e.target.dataset.deleteC;
+    if (viewId) openCustomerDetail(viewId);
+    if (editId) openCustomerDialog(customers.find(c => c.id === editId));
+    if (delId) deleteCustomer(delId);
+  });
+
+  document.getElementById('btnBackToCustomers').addEventListener('click', backToCustomerList);
+
+  function openCustomerDialog(customer){
+    document.getElementById('customerFormError').textContent = '';
+    document.getElementById('customerDialogTitle').textContent = customer ? 'แก้ไขลูกค้า' : 'เพิ่มลูกค้าใหม่';
+    document.getElementById('customerId').value = customer ? customer.id : '';
+    document.getElementById('cName').value = customer ? customer.name : '';
+    document.getElementById('cGroup').value = customer ? (customer.company_group || '') : customerGroupFilter;
+    document.getElementById('cPhone').value = customer ? (customer.phone || '') : '';
+    document.getElementById('cAddress').value = customer ? (customer.address || '') : '';
+    document.getElementById('cNote').value = customer ? (customer.note || '') : '';
+    customerDialog.showModal();
+  }
+
+  customerForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('customerId').value;
+    const payload = {
+      name: document.getElementById('cName').value.trim(),
+      company_group: document.getElementById('cGroup').value || null,
+      phone: document.getElementById('cPhone').value.trim() || null,
+      address: document.getElementById('cAddress').value.trim() || null,
+      note: document.getElementById('cNote').value.trim() || null,
+    };
+
+    if (!payload.name){
+      document.getElementById('customerFormError').textContent = 'กรุณากรอกชื่อลูกค้า';
+      return;
+    }
+
+    const submitBtn = document.getElementById('customerSubmitBtn');
+    submitBtn.disabled = true;
+
+    const { error } = id
+      ? await sb.from('customers').update(payload).eq('id', id)
+      : await sb.from('customers').insert(payload);
+
+    submitBtn.disabled = false;
+
+    if (error){
+      document.getElementById('customerFormError').textContent = 'บันทึกไม่สำเร็จ: ' + error.message;
+      return;
+    }
+
+    customerDialog.close();
+    showToast(id ? 'แก้ไขลูกค้าเรียบร้อย' : 'เพิ่มลูกค้าเรียบร้อย');
+    loadCustomers();
+  });
+
+  async function deleteCustomer(id){
+    const customer = customers.find(c => c.id === id);
+    if (!customer) return;
+    if (!confirm(`ลบลูกค้า "${customer.name}" ใช่หรือไม่? รายการสินค้าของลูกค้ารายนี้จะถูกลบไปด้วย (สต็อกจะไม่ถูกคืนอัตโนมัติ)`)) return;
+
+    const { error } = await sb.from('customers').delete().eq('id', id);
+    if (error){ showToast('ลบไม่สำเร็จ: ' + error.message, true); return; }
+
+    if (currentCustomerId === id) backToCustomerList();
+    showToast('ลบลูกค้าเรียบร้อย');
+    loadCustomers();
+  }
+
+  // ---------------- Add product to customer (admin + staff) ----------------
+  const customerItemDialog = document.getElementById('customerItemDialog');
+  const customerItemForm = document.getElementById('customerItemForm');
+
+  function openAddCustomerItemDialog(){
+    if (!currentCustomerId) return;
+    document.getElementById('customerItemFormError').textContent = '';
+    document.getElementById('customerItemDialogTitle').textContent = 'เพิ่มสินค้าให้ลูกค้า';
+    document.getElementById('customerItemSubmitBtn').textContent = 'เพิ่มรายการ';
+    document.getElementById('ciEditingId').value = '';
+    document.getElementById('ciProductPickerField').style.display = '';
+    document.getElementById('ciProductStaticField').style.display = 'none';
+    selectedCiProduct = null;
+    document.getElementById('ciProduct').value = '';
+    document.getElementById('ciProductSearch').value = '';
+    document.getElementById('ciProductResults').style.display = 'none';
+    document.getElementById('ciPrice').value = '';
+    document.getElementById('ciQuantity').value = 1;
+    updateCiTotalPreview();
+    customerItemDialog.showModal();
+    setTimeout(() => document.getElementById('ciProductSearch').focus(), 50);
+  }
+
+  function openEditCustomerItemDialog(item){
+    document.getElementById('customerItemFormError').textContent = '';
+    document.getElementById('customerItemDialogTitle').textContent = 'แก้ไขรายการสินค้า';
+    document.getElementById('customerItemSubmitBtn').textContent = 'บันทึกการแก้ไข';
+    document.getElementById('ciEditingId').value = item.id;
+    document.getElementById('ciProductPickerField').style.display = 'none';
+    document.getElementById('ciProductStaticField').style.display = '';
+    document.getElementById('ciProductStaticName').textContent =
+      item.product_name + (item.product_sku ? ` (${item.product_sku})` : '');
+    document.getElementById('ciPrice').value = item.unit_price;
+    document.getElementById('ciQuantity').value = item.quantity;
+    updateCiTotalPreview();
+    customerItemDialog.showModal();
+  }
+
+  document.getElementById('btnAddCustomerItem').addEventListener('click', openAddCustomerItemDialog);
+
+  function renderCiResults(query){
+    const box = document.getElementById('ciProductResults');
+    const q = (query || '').trim().toLowerCase();
+    const matches = !q
+      ? products
+      : products.filter(p => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q));
+
+    if (!matches.length){
+      box.innerHTML = '<div class="combo-empty">ไม่พบสินค้าที่ตรงกับคำค้นหา</div>';
+      box.style.display = 'block';
+      return;
+    }
+
+    box.innerHTML = matches.slice(0, 30).map(p => `
+      <div class="combo-item" data-id="${p.id}">
+        <div class="combo-item-name">${escapeHtml(p.name)}</div>
+        <div class="combo-item-meta mono">${escapeHtml(p.sku)} · คงเหลือ ${int(p.quantity)} ${escapeHtml(p.unit || '')}</div>
+      </div>
+    `).join('');
+    box.style.display = 'block';
+  }
+
+  document.getElementById('ciProductSearch').addEventListener('input', (e) => {
+    selectedCiProduct = null;
+    document.getElementById('ciProduct').value = '';
+    renderCiResults(e.target.value);
+  });
+
+  document.getElementById('ciProductSearch').addEventListener('focus', (e) => {
+    renderCiResults(e.target.value);
+  });
+
+  document.getElementById('ciProductResults').addEventListener('click', (e) => {
+    const item = e.target.closest('.combo-item');
+    if (!item) return;
+    const product = products.find(p => p.id === item.dataset.id);
+    if (!product) return;
+    selectedCiProduct = product;
+    document.getElementById('ciProduct').value = product.id;
+    document.getElementById('ciProductSearch').value = `${product.name} (${product.sku})`;
+    document.getElementById('ciProductResults').style.display = 'none';
+    document.getElementById('ciPrice').value = product.cost_price;
+    updateCiTotalPreview();
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#ciProductSearch') && !e.target.closest('#ciProductResults')){
+      document.getElementById('ciProductResults').style.display = 'none';
+    }
+  });
+
+  function updateCiTotalPreview(){
+    const price = Number(document.getElementById('ciPrice').value) || 0;
+    const qty = Number(document.getElementById('ciQuantity').value) || 0;
+    document.getElementById('ciTotalPreview').textContent = '฿' + money(price * qty);
+  }
+
+  document.getElementById('ciPrice').addEventListener('input', updateCiTotalPreview);
+  document.getElementById('ciQuantity').addEventListener('input', updateCiTotalPreview);
+
+  customerItemForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById('customerItemFormError');
+    const editingId = document.getElementById('ciEditingId').value;
+    const price = Number(document.getElementById('ciPrice').value);
+    const qty = Number(document.getElementById('ciQuantity').value);
+
+    if (!qty || qty <= 0){ errEl.textContent = 'กรุณากรอกจำนวนให้ถูกต้อง'; return; }
+    if (price < 0 || Number.isNaN(price)){ errEl.textContent = 'กรุณากรอกราคาต่อหน่วยให้ถูกต้อง'; return; }
+
+    const submitBtn = document.getElementById('customerItemSubmitBtn');
+
+    if (editingId){
+      submitBtn.disabled = true;
+      const { error: rpcErr } = await sb.rpc('update_customer_item', {
+        p_item_id: editingId,
+        p_quantity: qty,
+        p_unit_price: price
+      });
+      submitBtn.disabled = false;
+      if (rpcErr){ errEl.textContent = 'บันทึกไม่สำเร็จ: ' + rpcErr.message; return; }
+      customerItemDialog.close();
+      showToast('แก้ไขรายการเรียบร้อย');
+      await loadAll();
+      await loadCustomers();
+      return;
+    }
+
+    const productId = document.getElementById('ciProduct').value;
+    const product = products.find(p => p.id === productId);
+    if (!product){ errEl.textContent = 'กรุณาค้นหาและเลือกสินค้าจากรายการ'; return; }
+    if (qty > product.quantity){
+      errEl.textContent = `สต็อกคงเหลือมีแค่ ${product.quantity} ${product.unit || ''} ไม่พอ`;
+      return;
+    }
+
+    submitBtn.disabled = true;
+
+    const { error: rpcErr } = await sb.rpc('add_customer_item', {
+      p_customer_id: currentCustomerId,
+      p_product_id: product.id,
+      p_quantity: qty,
+      p_unit_price: price
+    });
+
+    submitBtn.disabled = false;
+
+    if (rpcErr){
+      errEl.textContent = 'บันทึกไม่สำเร็จ: ' + rpcErr.message;
+      return;
+    }
+
+    customerItemDialog.close();
+    showToast('เพิ่มสินค้าให้ลูกค้าเรียบร้อย');
+    await loadAll();
+    await loadCustomers();
+  });
+
+  document.getElementById('customerItemsBody').addEventListener('click', async (e) => {
+    const editId = e.target.dataset.editCi;
+    if (editId){
+      const item = customerItems.find(i => i.id === editId);
+      if (item) openEditCustomerItemDialog(item);
+      return;
+    }
+
+    const delId = e.target.dataset.deleteCi;
+    if (!delId) return;
+    const item = customerItems.find(i => i.id === delId);
+    if (!item) return;
+    if (!confirm(`ลบรายการ "${item.product_name}" ออกจากลูกค้ารายนี้ใช่หรือไม่? จำนวนสินค้าจะถูกคืนกลับเข้าสต็อก`)) return;
+
+    const { error: rpcErr } = await sb.rpc('remove_customer_item', { p_item_id: delId });
+    if (rpcErr){ showToast('ลบไม่สำเร็จ: ' + rpcErr.message, true); return; }
+
+    showToast('ลบรายการและคืนสต็อกเรียบร้อย');
+    await loadAll();
+    await loadCustomers();
+  });
+
+  // ---------------- Export customer items ----------------
+  document.getElementById('btnExportCsv').addEventListener('click', () => exportCustomerItems('csv'));
+  document.getElementById('btnExportExcel').addEventListener('click', () => exportCustomerItems('xlsx'));
+
+  function exportCustomerItems(format){
+    if (!currentCustomerId) return;
+    const customer = customers.find(c => c.id === currentCustomerId);
+    const items = customerItems.filter(i => i.customer_id === currentCustomerId);
+
+    if (!items.length){ showToast('ไม่มีรายการให้ export', true); return; }
+
+    const rows = items.map(i => ({
+      'สินค้า': i.product_name,
+      'รหัสสินค้า': i.product_sku || '',
+      'ราคาต่อหน่วย': Number(i.unit_price),
+      'จำนวน': Number(i.quantity),
+      'รวมเป็นเงิน': Number(i.unit_price) * Number(i.quantity)
+    }));
+    const grandTotal = rows.reduce((s, r) => s + r['รวมเป็นเงิน'], 0);
+    rows.push({ 'สินค้า': '', 'รหัสสินค้า': '', 'ราคาต่อหน่วย': '', 'จำนวน': 'รวมทั้งหมด', 'รวมเป็นเงิน': grandTotal });
+
+    const safeName = (customer?.name || 'customer').replace(/[^a-zA-Z0-9ก-๙_-]+/g, '_');
+    const filenameBase = `customer-${safeName}`;
+
+    if (format === 'csv'){
+      const headers = Object.keys(rows[0]);
+      const csvLines = [headers.join(',')].concat(
+        rows.map(r => headers.map(h => {
+          const v = r[h] === undefined || r[h] === null ? '' : String(r[h]);
+          return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+        }).join(','))
+      );
+      const csvContent = '\uFEFF' + csvLines.join('\n'); // BOM ช่วยให้ Excel อ่านภาษาไทยถูกต้อง
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      downloadBlob(blob, filenameBase + '.csv');
+    } else {
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'รายการสินค้า');
+      XLSX.writeFile(wb, filenameBase + '.xlsx');
+    }
+  }
+
+  function downloadBlob(blob, filename){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // ---------------- Users management (admin only) ----------------
+  document.getElementById('usersBody').addEventListener('click', async (e) => {
+    const roleId = e.target.dataset.toggleRole;
+    const activeId = e.target.dataset.toggleActive;
+    const deleteId = e.target.dataset.deleteUser;
+
+    if (roleId){
+      const u = users.find(x => x.id === roleId);
+      if (!u) return;
+      const newRole = u.role === 'admin' ? 'staff' : 'admin';
+      if (!confirm(`เปลี่ยนสิทธิ์ของ ${u.email} เป็น "${newRole === 'admin' ? 'ผู้ดูแลระบบ' : 'พนักงาน'}" ใช่หรือไม่?`)) return;
+      const { error } = await sb.from('profiles').update({ role: newRole }).eq('id', roleId);
+      if (error){ showToast('เปลี่ยนสิทธิ์ไม่สำเร็จ: ' + error.message, true); return; }
+      showToast('เปลี่ยนสิทธิ์เรียบร้อย');
+      loadUsers();
+    }
+
+    if (activeId){
+      const u = users.find(x => x.id === activeId);
+      if (!u) return;
+      const newActive = !u.active;
+      if (!confirm(`${newActive ? 'เปิดใช้งาน' : 'ระงับการใช้งาน'}บัญชี ${u.email} ใช่หรือไม่?`)) return;
+      const { error } = await sb.from('profiles').update({ active: newActive }).eq('id', activeId);
+      if (error){ showToast('บันทึกไม่สำเร็จ: ' + error.message, true); return; }
+      showToast('บันทึกเรียบร้อย');
+      loadUsers();
+    }
+
+    if (deleteId){
+      if (deleteId === currentProfile.id) return;
+      const email = e.target.dataset.email || '';
+      if (!confirm(`ลบผู้ใช้งาน "${email}" ใช่หรือไม่?\n\nการลบนี้จะตัดสิทธิ์การใช้งานระบบทั้งหมดทันที (บัญชีจะ login ไม่ได้อีก) แต่บัญชี Supabase Auth ที่แท้จริงจะยังคงอยู่ — หากต้องการลบบัญชีออกอย่างถาวร ต้องไปลบเพิ่มที่ Supabase Dashboard > Authentication > Users`)) return;
+      const { error } = await sb.from('profiles').delete().eq('id', deleteId);
+      if (error){ showToast('ลบไม่สำเร็จ: ' + error.message, true); return; }
+      showToast('ลบผู้ใช้งานเรียบร้อย');
+      loadUsers();
+    }
+  });
+
+  const userDialog = document.getElementById('userDialog');
+  const userForm = document.getElementById('userForm');
+
+  document.getElementById('btnAddUser').addEventListener('click', () => {
+    document.getElementById('userFormError').textContent = '';
+    userForm.reset();
+    userDialog.showModal();
+  });
+
+  userForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('uEmail').value.trim();
+    const password = document.getElementById('uPassword').value;
+    const role = document.querySelector('input[name="uRole"]:checked').value;
+    const errEl = document.getElementById('userFormError');
+
+    if (!email || !password || password.length < 6){
+      errEl.textContent = 'กรุณากรอกอีเมลและรหัสผ่านอย่างน้อย 6 ตัวอักษร';
+      return;
+    }
+
+    const submitBtn = document.getElementById('userSubmitBtn');
+    submitBtn.disabled = true;
+
+    // ใช้ client แยกต่างหาก (ไม่บันทึก session ลง localStorage) เพื่อไม่ให้กระทบ
+    // การเข้าสู่ระบบของผู้ดูแลที่ใช้งานอยู่ในขณะนี้
+    const tempClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false, storageKey: 'temp-admin-create-user' }
+    });
+
+    const { data, error } = await tempClient.auth.signUp({ email, password });
+
+    if (error){
+      submitBtn.disabled = false;
+      errEl.textContent = 'สร้างผู้ใช้งานไม่สำเร็จ: ' + error.message;
+      return;
+    }
+
+    if (!data.user){
+      submitBtn.disabled = false;
+      errEl.textContent = 'สร้างผู้ใช้งานไม่สำเร็จ (ไม่ได้รับข้อมูลผู้ใช้กลับมา)';
+      return;
+    }
+
+    // trigger บนฐานข้อมูลจะสร้างแถว profiles ให้อัตโนมัติอยู่แล้วตอน signUp
+    // (ค่าเริ่มต้น role='staff') ใช้ upsert เพื่ออัปเดตอีเมล/สิทธิ์ให้ตรงกับที่เลือกไว้
+    // โดยไม่ชนกับแถวที่ trigger สร้างไปแล้ว
+    const { error: profErr } = await sb.from('profiles').upsert({
+      id: data.user.id, email, role, active: true
+    });
+
+    submitBtn.disabled = false;
+
+    if (profErr){
+      errEl.textContent = 'สร้างบัญชีสำเร็จ แต่บันทึกสิทธิ์ไม่สำเร็จ: ' + profErr.message;
+      return;
+    }
+
+    userDialog.close();
+    showToast('เพิ่มผู้ใช้งานเรียบร้อย (หากเปิดใช้ "Confirm email" ผู้ใช้ต้องกดยืนยันอีเมลก่อนเข้าสู่ระบบได้)');
+    loadUsers();
+  });
+
+  // ---------------- Init ----------------
+  loadAll();
+  loadCustomers();
+  setInterval(() => { loadAll(); loadCustomers(); if (isAdmin) loadUsers(); }, 60000); // auto-refresh every 60s
+}
+
+// ---------------- PWA: register service worker (ต้องเปิดผ่าน https:// หรือ localhost) ----------------
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {
+      // เปิดผ่าน http:// ธรรมดา หรือเปิดไฟล์ตรง ๆ (file://) จะลงทะเบียนไม่สำเร็จ — ไม่กระทบการใช้งานหลัก
+    });
+  });
+}
+</script>
+</body>
+</html>
