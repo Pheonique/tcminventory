@@ -137,7 +137,12 @@
     margin-bottom: 8px;
     word-break: break-all;
     user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
   }
+  .sidebar-foot .user-label::selection{ background: transparent; }
+  .sidebar-foot .user-label::-moz-selection{ background: transparent; }
 
   .sidebar-foot .btn-ghost{ padding: 4px 0; font-size: 12px; }
 
