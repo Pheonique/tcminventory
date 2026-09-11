@@ -540,7 +540,7 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
       <a href="#customers" class="nav-link" data-customer-group="">ลูกค้า</a>
       <a href="#customers" class="nav-link nav-sublink" data-customer-group="TCM Consulting Group">TCM Consulting Group</a>
       <a href="#customers" class="nav-link nav-sublink" data-customer-group="TCM Solution and Service">TCM Solution and Service</a>
-      <a href="#history" class="nav-link">ประวัติรับเข้า-เบิกออก</a>
+      <a href="#history" class="nav-link" data-admin-only>ประวัติรับเข้า-เบิกออก</a>
       <a href="#users" class="nav-link" data-admin-only>ผู้ใช้งาน</a>
     </nav>
     <div class="sidebar-foot">
@@ -692,7 +692,7 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
       </div>
     </section>
 
-    <section id="history" class="tab-section">
+    <section id="history" class="tab-section" data-admin-only>
       <div class="panel">
         <div class="panel-head">
           <h2>ประวัติรับเข้า-เบิกออก<span class="count" id="historyCount"></span></h2>
@@ -2079,7 +2079,7 @@ function runApp(sb, currentProfile){
     a.addEventListener('click', (e) => {
       e.preventDefault();
       const targetId = a.getAttribute('href').slice(1);
-      if (targetId === 'users' && !isAdmin) return;
+      if ((targetId === 'users' || targetId === 'history') && !isAdmin) return;
       if (targetId === 'customers'){
         customerGroupFilter = a.dataset.customerGroup || '';
         backToCustomerList();
@@ -2091,7 +2091,8 @@ function runApp(sb, currentProfile){
   });
 
   const initialHashTab = location.hash.slice(1);
-  const initialTab = (sections.some(s => s.id === initialHashTab) && (initialHashTab !== 'users' || isAdmin))
+  const adminOnlyTabs = ['users', 'history'];
+  const initialTab = (sections.some(s => s.id === initialHashTab) && (!adminOnlyTabs.includes(initialHashTab) || isAdmin))
     ? initialHashTab
     : 'overview';
   showTab(initialTab);
