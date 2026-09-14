@@ -317,6 +317,9 @@
     background: var(--bg);
     color: var(--text);
   }
+  .status-select option:disabled{ color: var(--text-faint); }
+
+  input[readonly]{ background: var(--panel-2); color: var(--text-muted); cursor: not-allowed; }
 
   .row-actions{ display:flex; gap: 4px; justify-content: flex-end; flex-wrap: wrap; }
 
@@ -685,7 +688,7 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
           <div class="btn-row">
             <button class="btn" id="btnExportCsv">Export CSV</button>
             <button class="btn" id="btnExportExcel">Export Excel</button>
-            <button class="btn btn-primary" id="btnAddCustomerItem">+ เบิกสินค้า</button>
+            <button class="btn btn-primary" id="btnAddCustomerItem">เบิกสินค้า</button>
           </div>
         </div>
         <div class="panel">
@@ -861,7 +864,7 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
       </div>
       <div class="field-row">
         <div class="field">
-          <label for="fQuantity">จำนวนคงเหลือเริ่มต้น</label>
+          <label for="fQuantity" id="fQuantityLabel">จำนวนคงเหลือเริ่มต้น</label>
           <input type="number" id="fQuantity" min="0" step="1" value="0" required>
         </div>
         <div class="field">
@@ -869,9 +872,15 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
           <input type="number" id="fReorder" min="0" step="1" value="0" required>
         </div>
       </div>
+      <div class="field" id="fQuantityHint" style="display:none; margin-top:-8px;">
+        <div class="sub" style="color: var(--text-faint); font-size:11.5px;">แก้ไขจำนวนผ่านการบันทึกรับเข้า/เบิกออก, เพิ่ม/รับคืนสินค้าลูกค้า หรือย้ายจากสินค้าคืนเท่านั้น</div>
+      </div>
       <div class="field">
-        <label for="fCost">ราคาต้นทุนต่อหน่วย (บาท)</label>
+        <label for="fCost" id="fCostLabel">ราคาต้นทุนต่อหน่วย (บาท)</label>
         <input type="number" id="fCost" min="0" step="0.01" value="0" required>
+      </div>
+      <div class="field" id="fCostHint" style="display:none; margin-top:-8px;">
+        <div class="sub" style="color: var(--text-faint); font-size:11.5px;">ราคาทุนจริงคำนวณแยกตามล็อตสินค้า (ดูที่หน้าบันทึกรับเข้า) ค่านี้ใช้เป็นข้อมูลอ้างอิงตอนสร้างสินค้าใหม่เท่านั้น</div>
       </div>
       <div class="form-error" id="productFormError"></div>
     </div>
@@ -923,9 +932,14 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
             <div class="mono" id="mProductDetail" style="padding:9px 10px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg); min-height:38px;">-</div>
           </div>
 
+          <div class="field" id="mLotField" style="display:none;">
+            <label for="mLot">ล็อตสินค้าที่จะเบิก</label>
+            <select id="mLot" class="status-select" style="width:100%;"></select>
+          </div>
+
           <div class="field-row">
             <div class="field" id="mPriceField" style="display:none;">
-              <label for="mUnitPrice">ราคาต่อหน่วย (บาท)</label>
+              <label for="mUnitPrice" id="mPriceLabel">ราคาต่อหน่วย (บาท)</label>
               <input type="number" id="mUnitPrice" min="0" step="0.01">
             </div>
             <div class="field">
@@ -1051,6 +1065,10 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
       <div class="field" id="ciProductStaticField" style="display:none;">
         <label>สินค้า</label>
         <div class="mono" id="ciProductStaticName" style="padding:9px 10px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg);"></div>
+      </div>
+      <div class="field" id="ciLotField" style="display:none;">
+        <label for="ciLot">ล็อตสินค้า</label>
+        <select id="ciLot" class="status-select" style="width:100%;"></select>
       </div>
       <div class="field-row">
         <div class="field">
@@ -1354,6 +1372,7 @@ function initAuth(){
 function runApp(sb, currentProfile){
   let products = [];
   let movements = [];
+  let stockLots = [];
   let customers = [];
   let customerItems = [];
   let users = [];
@@ -1557,21 +1576,43 @@ function runApp(sb, currentProfile){
 
   // ---------------- Data loading ----------------
   async function loadAll(){
-    const [{ data: p, error: pErr }, { data: m, error: mErr }] = await Promise.all([
+    const [{ data: p, error: pErr }, { data: m, error: mErr }, { data: sl, error: slErr }] = await Promise.all([
       sb.from('products').select('*').order('name', { ascending: true }),
-      sb.from('stock_movements').select('*, products(name, sku)').order('created_at', { ascending: false }).limit(100)
+      sb.from('stock_movements').select('*, products(name, sku)').order('created_at', { ascending: false }).limit(100),
+      sb.from('stock_lots').select('*').order('received_at', { ascending: true })
     ]);
 
     if (pErr) { showToast('โหลดข้อมูลสินค้าไม่สำเร็จ: ' + pErr.message, true); return; }
     if (mErr) { showToast('โหลดประวัติไม่สำเร็จ: ' + mErr.message, true); return; }
+    if (slErr) { showToast('โหลดข้อมูลล็อตสินค้าไม่สำเร็จ: ' + slErr.message, true); return; }
 
     products = p || [];
     movements = m || [];
+    stockLots = sl || [];
 
     renderStats();
     renderLowStock();
     renderProducts();
     renderHistory();
+  }
+
+  function lotsForProduct(productId){
+    return stockLots
+      .filter(l => l.product_id === productId)
+      .sort((a, b) => new Date(a.received_at) - new Date(b.received_at));
+  }
+
+  function lotOptionsHtml(productId, selectedLotId){
+    const lots = lotsForProduct(productId);
+    if (!lots.length){
+      return '<option value="">— ไม่มีล็อตสินค้านี้ —</option>';
+    }
+    return '<option value="">— เลือกล็อต —</option>' + lots.map(l => {
+      const depleted = Number(l.quantity_remaining) <= 0;
+      const label = `${dt(l.received_at)} · เหลือ ${int(l.quantity_remaining)} @ ฿${money(l.cost_price)}` + (depleted ? ' (หมด)' : '');
+      const selected = l.id === selectedLotId ? 'selected' : '';
+      return `<option value="${l.id}" data-remaining="${l.quantity_remaining}" ${depleted ? 'disabled' : ''} ${selected}>${escapeHtml(label)}</option>`;
+    }).join('');
   }
 
   async function loadCustomers(){
@@ -1614,7 +1655,7 @@ function runApp(sb, currentProfile){
 
   // ---------------- Stats ----------------
   function renderStats(){
-    const totalValue = products.reduce((sum, p) => sum + (Number(p.quantity) * Number(p.cost_price)), 0);
+    const totalValue = stockLots.reduce((sum, l) => sum + (Number(l.quantity_remaining) * Number(l.cost_price)), 0);
     const lowStock = products.filter(p => Number(p.quantity) <= Number(p.reorder_point));
     const todayStr = new Date().toDateString();
     const todayMoves = movements.filter(m => new Date(m.created_at).toDateString() === todayStr);
@@ -1832,6 +1873,8 @@ function runApp(sb, currentProfile){
     document.getElementById('mSkuResults').style.display = 'none';
     document.getElementById('mUnitPrice').value = '';
     document.getElementById('mQuantity').value = 1;
+    document.getElementById('mQuantity').removeAttribute('max');
+    document.getElementById('mLot').innerHTML = '';
   }
 
   function selectMovementProduct(p){
@@ -1843,7 +1886,26 @@ function runApp(sb, currentProfile){
     if (document.getElementById('mPriceField').style.display !== 'none'){
       document.getElementById('mUnitPrice').value = p.cost_price;
     }
+    if (movementMode() === 'out'){
+      document.getElementById('mLot').innerHTML = lotOptionsHtml(p.id, null);
+      updateMQuantityMaxFromLot();
+    }
   }
+
+  function updateMQuantityMaxFromLot(){
+    const lotSelect = document.getElementById('mLot');
+    const qtyInput = document.getElementById('mQuantity');
+    const opt = lotSelect.selectedOptions[0];
+    const remaining = opt ? Number(opt.dataset.remaining) : null;
+    if (movementMode() === 'out' && remaining){
+      qtyInput.max = remaining;
+      if (Number(qtyInput.value) > remaining) qtyInput.value = remaining;
+    } else {
+      qtyInput.removeAttribute('max');
+    }
+  }
+
+  document.getElementById('mLot').addEventListener('change', updateMQuantityMaxFromLot);
 
   function renderMSkuResults(query){
     const box = document.getElementById('mSkuResults');
@@ -2006,8 +2068,16 @@ function runApp(sb, currentProfile){
       document.getElementById('mCustomerId').value = '';
       document.getElementById('mCustomerSearch').value = '';
     }
-    const needsPrice = type === 'out' && !!custId;
+    const needsPrice = type === 'in' || (type === 'out' && !!custId);
     document.getElementById('mPriceField').style.display = needsPrice ? '' : 'none';
+    document.getElementById('mPriceLabel').textContent = type === 'in' ? 'ราคาทุนต่อหน่วย (บาท)' : 'ราคาขายต่อหน่วย (บาท)';
+    document.getElementById('mLotField').style.display = type === 'out' ? '' : 'none';
+    if (type === 'out' && selectedMovementProduct){
+      document.getElementById('mLot').innerHTML = lotOptionsHtml(selectedMovementProduct.id, null);
+      updateMQuantityMaxFromLot();
+    } else {
+      document.getElementById('mQuantity').removeAttribute('max');
+    }
     renderCartTable();
   }
 
@@ -2015,7 +2085,7 @@ function runApp(sb, currentProfile){
   document.getElementById('mTypeOut').addEventListener('change', onMovementModeOrCustomerChanged);
 
   function renderCartTable(){
-    const showPrice = movementMode() === 'out' && !!movementCustomerId();
+    const showPrice = movementMode() === 'in' || (movementMode() === 'out' && !!movementCustomerId());
     document.getElementById('cartCount').textContent = movementCart.length;
 
     document.getElementById('cartTableHead').innerHTML = showPrice
@@ -2032,12 +2102,13 @@ function runApp(sb, currentProfile){
 
     let grandTotal = 0;
     body.innerHTML = movementCart.map((line, idx) => {
+      const lotNote = line.lotLabel ? `<br><span style="color:#888; font-size:11px;">ล็อต: ${escapeHtml(line.lotLabel)}</span>` : '';
       if (showPrice){
         const lineTotal = line.quantity * (line.unitPrice || 0);
         grandTotal += lineTotal;
         return `
           <tr>
-            <td>${escapeHtml(line.name)}<br><span style="color:#888; font-size:11px;">${escapeHtml(line.sku)}</span></td>
+            <td>${escapeHtml(line.name)}<br><span style="color:#888; font-size:11px;">${escapeHtml(line.sku)}</span>${lotNote}</td>
             <td class="num">฿${money(line.unitPrice || 0)}</td>
             <td class="num">${int(line.quantity)} ${escapeHtml(line.unit)}</td>
             <td class="num">฿${money(lineTotal)}</td>
@@ -2047,7 +2118,7 @@ function runApp(sb, currentProfile){
       }
       return `
         <tr>
-          <td>${escapeHtml(line.name)}<br><span style="color:#888; font-size:11px;">${escapeHtml(line.sku)}</span></td>
+          <td>${escapeHtml(line.name)}<br><span style="color:#888; font-size:11px;">${escapeHtml(line.sku)}</span>${lotNote}</td>
           <td class="num">${int(line.quantity)} ${escapeHtml(line.unit)}</td>
           <td><button type="button" class="cart-remove-btn" data-remove-line="${idx}">ลบ</button></td>
         </tr>
@@ -2078,7 +2149,7 @@ function runApp(sb, currentProfile){
 
     const type = movementMode();
     const custId = movementCustomerId();
-    const needsPrice = type === 'out' && !!custId;
+    const needsPrice = type === 'in' || (type === 'out' && !!custId);
 
     const productId = document.getElementById('mProduct').value;
     const product = products.find(p => p.id === productId);
@@ -2089,14 +2160,23 @@ function runApp(sb, currentProfile){
     if (!qty || qty <= 0){ errEl.textContent = 'กรุณากรอกจำนวนให้ถูกต้อง'; return; }
     if (needsPrice && (Number.isNaN(price) || price < 0)){ errEl.textContent = 'กรุณากรอกราคาต่อหน่วยให้ถูกต้อง'; return; }
 
+    let lotId = null;
+    let lotLabel = null;
+
     if (type === 'out'){
+      lotId = document.getElementById('mLot').value;
+      if (!lotId){ errEl.textContent = 'กรุณาเลือกล็อตสินค้าที่จะเบิก'; return; }
+      const lot = stockLots.find(l => l.id === lotId);
+      if (!lot){ errEl.textContent = 'ไม่พบล็อตที่เลือก'; return; }
+
       const alreadyInCart = movementCart
-        .filter(l => l.productId === product.id)
+        .filter(l => l.lotId === lotId)
         .reduce((s, l) => s + l.quantity, 0);
-      if (alreadyInCart + qty > product.quantity){
-        errEl.textContent = `สต็อกคงเหลือมีแค่ ${product.quantity} ${product.unit || ''} (ในรายการที่เพิ่มไว้แล้วรวม ${alreadyInCart})`;
+      if (alreadyInCart + qty > lot.quantity_remaining){
+        errEl.textContent = `ล็อตนี้เหลือแค่ ${int(lot.quantity_remaining)} ${product.unit || ''} (ในรายการที่เพิ่มไว้แล้วรวม ${int(alreadyInCart)})`;
         return;
       }
+      lotLabel = `${dt(lot.received_at)} @ ฿${money(lot.cost_price)}`;
     }
 
     movementCart.push({
@@ -2105,14 +2185,18 @@ function runApp(sb, currentProfile){
       name: product.name,
       unit: product.unit || '',
       quantity: qty,
-      unitPrice: price
+      unitPrice: price,
+      lotId,
+      lotLabel
     });
 
     document.getElementById('mSku').value = '';
     document.getElementById('mProduct').value = '';
     document.getElementById('mProductDetail').textContent = '-';
     document.getElementById('mQuantity').value = 1;
+    document.getElementById('mQuantity').removeAttribute('max');
     document.getElementById('mUnitPrice').value = '';
+    document.getElementById('mLot').innerHTML = '';
     document.getElementById('mSkuResults').style.display = 'none';
     document.getElementById('mSku').focus();
 
@@ -2343,6 +2427,17 @@ function runApp(sb, currentProfile){
     document.getElementById('fQuantity').value = product ? product.quantity : 0;
     document.getElementById('fReorder').value = product ? product.reorder_point : 0;
     document.getElementById('fCost').value = product ? product.cost_price : 0;
+
+    const fQuantity = document.getElementById('fQuantity');
+    const fCost = document.getElementById('fCost');
+    // จำนวน/ราคาทุนแก้ไขได้เฉพาะตอนสร้างสินค้าใหม่เท่านั้น — สินค้าที่มีอยู่แล้วต้องปรับผ่านล็อต/รับเข้า-เบิกออก
+    fQuantity.readOnly = !!product;
+    fCost.readOnly = !!product;
+    document.getElementById('fQuantityHint').style.display = product ? '' : 'none';
+    document.getElementById('fCostHint').style.display = product ? '' : 'none';
+    document.getElementById('fQuantityLabel').textContent = product ? 'จำนวนคงเหลือ' : 'จำนวนคงเหลือเริ่มต้น';
+    document.getElementById('fCostLabel').textContent = product ? 'ราคาต้นทุนต่อหน่วย (อ้างอิง)' : 'ราคาต้นทุนต่อหน่วย (บาท)';
+
     productDialog.showModal();
   }
 
@@ -2354,10 +2449,16 @@ function runApp(sb, currentProfile){
       name: document.getElementById('fName').value.trim(),
       category: document.getElementById('fCategory').value.trim() || null,
       unit: document.getElementById('fUnit').value.trim() || 'ชิ้น',
-      quantity: Number(document.getElementById('fQuantity').value),
       reorder_point: Number(document.getElementById('fReorder').value),
-      cost_price: Number(document.getElementById('fCost').value),
     };
+
+    const initialQuantity = Number(document.getElementById('fQuantity').value);
+    const initialCost = Number(document.getElementById('fCost').value);
+    if (!id){
+      // จำนวน/ราคาทุนตั้งได้เฉพาะตอนสร้างใหม่ (จะกลายเป็นล็อตแรกของสินค้านี้)
+      payload.quantity = initialQuantity;
+      payload.cost_price = initialCost;
+    }
 
     if (!payload.sku || !payload.name){
       document.getElementById('productFormError').textContent = 'กรุณากรอกรหัสสินค้าและชื่อสินค้า';
@@ -2367,9 +2468,32 @@ function runApp(sb, currentProfile){
     const submitBtn = document.getElementById('productSubmitBtn');
     submitBtn.disabled = true;
 
-    const { error } = id
-      ? await sb.from('products').update(payload).eq('id', id)
-      : await sb.from('products').insert(payload);
+    if (id){
+      const { error } = await sb.from('products').update(payload).eq('id', id);
+      submitBtn.disabled = false;
+      if (error){
+        document.getElementById('productFormError').textContent = error.message.includes('duplicate')
+          ? 'รหัสสินค้า (SKU) นี้มีอยู่แล้ว'
+          : 'บันทึกไม่สำเร็จ: ' + error.message;
+        return;
+      }
+      productDialog.close();
+      showToast('แก้ไขสินค้าเรียบร้อย');
+      loadAll();
+      return;
+    }
+
+    const { data: newProduct, error } = await sb.from('products').insert(payload).select().single();
+
+    if (!error && newProduct && initialQuantity > 0){
+      await sb.from('stock_lots').insert({
+        product_id: newProduct.id,
+        cost_price: initialCost,
+        quantity_received: initialQuantity,
+        quantity_remaining: initialQuantity,
+        note: 'สต๊อกเริ่มต้น'
+      });
+    }
 
     submitBtn.disabled = false;
 
@@ -2381,7 +2505,7 @@ function runApp(sb, currentProfile){
     }
 
     productDialog.close();
-    showToast(id ? 'แก้ไขสินค้าเรียบร้อย' : 'เพิ่มสินค้าเรียบร้อย');
+    showToast('เพิ่มสินค้าเรียบร้อย');
     loadAll();
   });
 
@@ -2430,7 +2554,8 @@ function runApp(sb, currentProfile){
     const lines = movementCart.map(l => ({
       product_id: l.productId,
       quantity: l.quantity,
-      unit_price: l.unitPrice
+      unit_price: l.unitPrice,
+      lot_id: l.lotId || null
     }));
 
     const { error } = await sb.rpc('record_movement_batch', {
@@ -2540,12 +2665,15 @@ function runApp(sb, currentProfile){
     document.getElementById('ciEditingId').value = '';
     document.getElementById('ciProductPickerField').style.display = '';
     document.getElementById('ciProductStaticField').style.display = 'none';
+    document.getElementById('ciLotField').style.display = '';
+    document.getElementById('ciLot').innerHTML = '';
     selectedCiProduct = null;
     document.getElementById('ciProduct').value = '';
     document.getElementById('ciProductSearch').value = '';
     document.getElementById('ciProductResults').style.display = 'none';
     document.getElementById('ciPrice').value = '';
     document.getElementById('ciQuantity').value = 1;
+    document.getElementById('ciQuantity').removeAttribute('max');
     updateCiTotalPreview();
     customerItemDialog.showModal();
     setTimeout(() => document.getElementById('ciProductSearch').focus(), 50);
@@ -2558,10 +2686,12 @@ function runApp(sb, currentProfile){
     document.getElementById('ciEditingId').value = item.id;
     document.getElementById('ciProductPickerField').style.display = 'none';
     document.getElementById('ciProductStaticField').style.display = '';
+    document.getElementById('ciLotField').style.display = 'none';
     document.getElementById('ciProductStaticName').textContent =
       item.product_name + (item.product_sku ? ` (${item.product_sku})` : '');
     document.getElementById('ciPrice').value = item.unit_price;
     document.getElementById('ciQuantity').value = item.quantity;
+    document.getElementById('ciQuantity').removeAttribute('max');
     updateCiTotalPreview();
     customerItemDialog.showModal();
   }
@@ -2609,7 +2739,22 @@ function runApp(sb, currentProfile){
     document.getElementById('ciProduct').value = product.id;
     document.getElementById('ciProductSearch').value = `${product.name} (${product.sku})`;
     document.getElementById('ciProductResults').style.display = 'none';
-    document.getElementById('ciPrice').value = product.cost_price;
+    document.getElementById('ciLot').innerHTML = lotOptionsHtml(product.id, null);
+    document.getElementById('ciPrice').value = '';
+    document.getElementById('ciQuantity').removeAttribute('max');
+    updateCiTotalPreview();
+  });
+
+  document.getElementById('ciLot').addEventListener('change', (e) => {
+    const lot = stockLots.find(l => l.id === e.target.value);
+    const qtyInput = document.getElementById('ciQuantity');
+    if (lot){
+      document.getElementById('ciPrice').value = lot.cost_price;
+      qtyInput.max = lot.quantity_remaining;
+      if (Number(qtyInput.value) > lot.quantity_remaining) qtyInput.value = lot.quantity_remaining;
+    } else {
+      qtyInput.removeAttribute('max');
+    }
     updateCiTotalPreview();
   });
 
@@ -2659,8 +2804,13 @@ function runApp(sb, currentProfile){
     const productId = document.getElementById('ciProduct').value;
     const product = products.find(p => p.id === productId);
     if (!product){ errEl.textContent = 'กรุณาค้นหาและเลือกสินค้าจากรายการ'; return; }
-    if (qty > product.quantity){
-      errEl.textContent = `สต็อกคงเหลือมีแค่ ${product.quantity} ${product.unit || ''} ไม่พอ`;
+
+    const lotId = document.getElementById('ciLot').value;
+    if (!lotId){ errEl.textContent = 'กรุณาเลือกล็อตสินค้า'; return; }
+    const lot = stockLots.find(l => l.id === lotId);
+    if (!lot){ errEl.textContent = 'ไม่พบล็อตที่เลือก'; return; }
+    if (qty > lot.quantity_remaining){
+      errEl.textContent = `ล็อตนี้เหลือแค่ ${int(lot.quantity_remaining)} ${product.unit || ''} ไม่พอ`;
       return;
     }
 
@@ -2670,7 +2820,8 @@ function runApp(sb, currentProfile){
       p_customer_id: currentCustomerId,
       p_product_id: product.id,
       p_quantity: qty,
-      p_unit_price: price
+      p_unit_price: price,
+      p_lot_id: lotId
     });
 
     submitBtn.disabled = false;
