@@ -740,6 +740,25 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
           <p>สินค้าที่รับคืนจากลูกค้า รอตรวจสอบก่อนย้ายกลับเข้าสต๊อกหลัก</p>
         </div>
       </div>
+      <div class="tally-row" style="grid-template-columns: repeat(4, 1fr); margin-bottom:16px;">
+        <div class="tally">
+          <div class="label">รอตรวจสอบ</div>
+          <div class="value mono" id="returnPendingCount" style="font-size:20px;">-</div>
+        </div>
+        <div class="tally">
+          <div class="label">สภาพดี (รอย้ายเข้าสต๊อก)</div>
+          <div class="value mono" id="returnGoodCount" style="font-size:20px;">-</div>
+        </div>
+        <div class="tally">
+          <div class="label">เสียหาย</div>
+          <div class="value mono red" id="returnDamagedCount" style="font-size:20px;">-</div>
+          <div class="sub">มูลค่ารวม <span id="returnDamagedValue">฿0.00</span></div>
+        </div>
+        <div class="tally">
+          <div class="label">คืนสต๊อกแล้ว</div>
+          <div class="value mono" id="returnRestockedCount" style="font-size:20px;">-</div>
+        </div>
+      </div>
       <div class="panel">
         <div class="panel-head">
           <h2>รายการสินค้าคืน<span class="count" id="returnCount"></span></h2>
@@ -1698,16 +1717,49 @@ function runApp(sb, currentProfile){
   }
 
   // ---------------- Returned stock (customer returns, admin only) ----------------
+  function returnsTally(){
+    const pending = returnedItems.filter(r => r.status === 'pending').length;
+    const good = returnedItems.filter(r => r.status === 'good').length;
+    const restocked = returnedItems.filter(r => r.status === 'restocked').length;
+    const damagedItems = returnedItems.filter(r => r.status === 'damaged');
+    const damagedValue = damagedItems.reduce((sum, r) => {
+      const p = products.find(p => p.id === r.product_id);
+      const cost = p ? Number(p.cost_price) || 0 : 0;
+      return sum + cost * Number(r.quantity);
+    }, 0);
+    return { pending, good, restocked, damagedCount: damagedItems.length, damagedValue };
+  }
+
   function renderReturns(){
     const body = document.getElementById('returnsBody');
     document.getElementById('returnCount').textContent = `(${returnedItems.length})`;
+
+    const t = returnsTally();
+    document.getElementById('returnPendingCount').textContent = int(t.pending);
+    document.getElementById('returnGoodCount').textContent = int(t.good);
+    document.getElementById('returnDamagedCount').textContent = int(t.damagedCount);
+    document.getElementById('returnDamagedValue').textContent = '฿' + money(t.damagedValue);
+    document.getElementById('returnRestockedCount').textContent = int(t.restocked);
 
     if (!returnedItems.length){
       body.innerHTML = `<tr><td colspan="6" class="empty-note">ยังไม่มีสินค้าคืน</td></tr>`;
       return;
     }
 
-    body.innerHTML = returnedItems.map(r => `
+    body.innerHTML = returnedItems.map(r => {
+      let statusCell;
+      if (r.status === 'restocked'){
+        statusCell = '<span class="badge badge-neutral">คืนสต๊อกแล้ว</span>';
+      } else if (r.status === 'damaged'){
+        statusCell = '<span class="badge badge-out">เสีย</span>';
+      } else {
+        statusCell = `<select class="status-select" data-status-select="${r.id}">
+              <option value="pending" ${r.status === 'pending' ? 'selected' : ''}>รอตรวจสอบ</option>
+              <option value="good" ${r.status === 'good' ? 'selected' : ''}>ดี</option>
+              <option value="damaged" ${r.status === 'damaged' ? 'selected' : ''}>เสีย</option>
+            </select>`;
+      }
+      return `
       <tr data-id="${r.id}">
         <td class="mono">${dt(r.created_at)}</td>
         <td>
@@ -1716,26 +1768,39 @@ function runApp(sb, currentProfile){
         </td>
         <td>${escapeHtml(r.customer_name || '-')}</td>
         <td class="num mono">${int(r.quantity)}</td>
-        <td>${r.status === 'restocked'
-          ? '<span class="badge badge-neutral">คืนสต๊อกแล้ว</span>'
-          : `<select class="status-select" data-status-select="${r.id}">
-              <option value="pending" ${r.status === 'pending' ? 'selected' : ''}>รอตรวจสอบ</option>
-              <option value="good" ${r.status === 'good' ? 'selected' : ''}>ดี</option>
-              <option value="damaged" ${r.status === 'damaged' ? 'selected' : ''}>เสีย</option>
-            </select>`
-        }</td>
+        <td>${statusCell}</td>
         <td>${r.status === 'good'
           ? `<button class="btn-ghost" data-restock="${r.id}">ย้ายกลับเข้าสต๊อกหลัก</button>`
           : ''
         }</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
   }
 
   document.getElementById('returnsBody').addEventListener('change', async (e) => {
     const id = e.target.dataset.statusSelect;
     if (!id) return;
-    const { error } = await sb.from('returned_items').update({ status: e.target.value }).eq('id', id);
+    const newStatus = e.target.value;
+
+    if (newStatus === 'damaged'){
+      const item = returnedItems.find(r => r.id === id);
+      const ok = confirm(
+        `ยืนยันว่าสินค้า "${item ? item.product_name : ''}" จำนวน ${item ? int(item.quantity) : ''} เสียหายใช่หรือไม่?\n` +
+        `เมื่อยืนยันแล้วจะไม่สามารถนำกลับเข้าสต๊อกหรือแก้ไขสถานะนี้ได้อีก`
+      );
+      if (!ok){ renderReturns(); return; }
+
+      const { error } = await sb.from('returned_items')
+        .update({ status: 'damaged', damaged_at: new Date().toISOString() })
+        .eq('id', id);
+      if (error){ showToast('บันทึกไม่สำเร็จ: ' + error.message, true); return; }
+      showToast('บันทึกสินค้าเสียหายเรียบร้อย');
+      await loadReturnedItems();
+      return;
+    }
+
+    const { error } = await sb.from('returned_items').update({ status: newStatus }).eq('id', id);
     if (error){ showToast('อัปเดตสถานะไม่สำเร็จ: ' + error.message, true); return; }
     await loadReturnedItems();
   });
