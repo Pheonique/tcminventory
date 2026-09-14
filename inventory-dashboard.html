@@ -872,7 +872,7 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
       <div class="page-head">
         <div>
           <h1>สินค้าคืน</h1>
-          <p>สินค้าที่รับคืนจากลูกค้า รอตรวจสอบก่อนย้ายกลับเข้าสต๊อกหลัก</p>
+          <p>สินค้าที่รับคืนจากลูกค้า รอตรวจสอบก่อนย้ายกลับเข้าสต๊อกหลัก · ตัวเลขสรุปด้านล่างนับรวมทุกวัน ส่วนตารางกรองตามวันที่ที่เลือก</p>
         </div>
       </div>
       <div class="tally-row" style="grid-template-columns: repeat(4, 1fr); margin-bottom:16px;">
@@ -897,6 +897,10 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
       <div class="panel">
         <div class="panel-head">
           <h2>รายการสินค้าคืน<span class="count" id="returnCount"></span></h2>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <input type="date" id="returnDatePicker" class="search" style="width:160px;">
+            <button type="button" class="btn" id="btnReturnToday">วันนี้</button>
+          </div>
         </div>
         <table>
           <thead>
@@ -1558,7 +1562,9 @@ function runApp(sb, currentProfile){
   let customerItems = [];
   let users = [];
   let loginLogs = [];
-  let returnedItems = [];
+  let returnedItems = []; // all-time, used only for the summary tally (pending/good/damaged shouldn't disappear just because they're from another day)
+  let returnHistoryItems = []; // returns for whichever date is selected on the สินค้าคืน table
+  let returnHistoryDate = '';
   let boqItems = [];
   let currentCustomerId = null;
   let selectedCiProduct = null;
@@ -1876,6 +1882,22 @@ function runApp(sb, currentProfile){
     const { data: r, error: rErr } = await sb.from('returned_items').select('*').order('created_at', { ascending: false });
     if (rErr){ showToast('โหลดข้อมูลสินค้าคืนไม่สำเร็จ: ' + rErr.message, true); return; }
     returnedItems = r || [];
+    await loadReturnHistory(returnHistoryDate || dateStrToday());
+  }
+
+  async function loadReturnHistory(dateStr){
+    returnHistoryDate = dateStr;
+    const picker = document.getElementById('returnDatePicker');
+    if (picker && picker.value !== dateStr) picker.value = dateStr;
+
+    const range = dayRangeIso(dateStr);
+    const { data, error } = await sb.from('returned_items').select('*')
+      .gte('created_at', range.startIso).lt('created_at', range.endIso)
+      .order('created_at', { ascending: false });
+
+    if (error){ showToast('โหลดข้อมูลสินค้าคืนไม่สำเร็จ: ' + error.message, true); return; }
+
+    returnHistoryItems = data || [];
     renderReturns();
   }
 
@@ -2000,7 +2022,7 @@ function runApp(sb, currentProfile){
 
   function renderReturns(){
     const body = document.getElementById('returnsBody');
-    document.getElementById('returnCount').textContent = `(${returnedItems.length})`;
+    document.getElementById('returnCount').textContent = `(${returnHistoryItems.length})`;
 
     const t = returnsTally();
     document.getElementById('returnPendingCount').textContent = int(t.pending);
@@ -2009,12 +2031,13 @@ function runApp(sb, currentProfile){
     document.getElementById('returnDamagedValue').textContent = '฿' + money(t.damagedValue);
     document.getElementById('returnRestockedCount').textContent = int(t.restocked);
 
-    if (!returnedItems.length){
-      body.innerHTML = `<tr><td colspan="6" class="empty-note">ยังไม่มีสินค้าคืน</td></tr>`;
+    if (!returnHistoryItems.length){
+      const isToday = returnHistoryDate === dateStrToday();
+      body.innerHTML = `<tr><td colspan="6" class="empty-note">${isToday ? 'วันนี้ยังไม่มีสินค้าคืน' : 'ไม่มีสินค้าคืนในวันที่เลือก'}</td></tr>`;
       return;
     }
 
-    body.innerHTML = returnedItems.map(r => {
+    body.innerHTML = returnHistoryItems.map(r => {
       let statusCell;
       if (r.status === 'restocked'){
         statusCell = '<span class="badge badge-neutral">คืนสต๊อกแล้ว</span>';
@@ -3592,6 +3615,19 @@ function runApp(sb, currentProfile){
 
   document.getElementById('btnHistoryToday').addEventListener('click', () => {
     loadHistory(dateStrToday());
+  });
+
+  // ---------------- Returns: date filter controls ----------------
+  const returnDatePicker = document.getElementById('returnDatePicker');
+  returnDatePicker.max = dateStrToday();
+  returnDatePicker.value = dateStrToday();
+
+  returnDatePicker.addEventListener('change', (e) => {
+    loadReturnHistory(e.target.value || dateStrToday());
+  });
+
+  document.getElementById('btnReturnToday').addEventListener('click', () => {
+    loadReturnHistory(dateStrToday());
   });
 
   // ---------------- Init ----------------
