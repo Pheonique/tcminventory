@@ -368,7 +368,7 @@
     body.printing-boq .sidebar{ display:none !important; }
     body.printing-boq .main{ padding:0; max-width:none; }
     body.printing-boq .tabbar,
-    body.printing-boq #btnBackToCustomers,
+    body.printing-boq #btnBackToProjects,
     body.printing-boq #custTabBoq .btn-row{ display:none !important; }
     body.printing-boq, body.printing-boq .app, body.printing-boq .main,
     body.printing-boq .panel{ background:#fff !important; color:#111 !important; }
@@ -728,10 +728,43 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
         </div>
       </div>
 
+      <div id="customerProjectsWrap" style="display:none">
+        <div class="page-head">
+          <div>
+            <button type="button" class="btn-ghost" id="btnBackToCustomersFromProjects" style="padding-left:0; margin-bottom:6px;">← กลับไปหน้าลูกค้า</button>
+            <h1 id="projectsCustomerName">-</h1>
+            <p id="projectsCustomerMeta"></p>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" id="btnAddProject" data-admin-only>+ เพิ่มโปรเจค</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>โปรเจคของลูกค้า<span class="count" id="projectCount"></span></h2>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>ชื่อโปรเจค</th>
+                <th>สถานะ</th>
+                <th class="num">รายการเบิกสินค้า</th>
+                <th class="num">มูลค่า BOQ</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="projectsBody">
+              <tr><td colspan="5" class="empty-note">กำลังโหลด...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div id="customerDetailWrap" style="display:none">
         <div class="page-head">
           <div>
-            <button type="button" class="btn-ghost" id="btnBackToCustomers" style="padding-left:0; margin-bottom:6px;">← กลับไปหน้าลูกค้า</button>
+            <button type="button" class="btn-ghost" id="btnBackToProjects" style="padding-left:0; margin-bottom:6px;">← กลับไปหน้าโปรเจคของลูกค้า</button>
+            <p class="breadcrumb" id="projectBreadcrumb" style="color:var(--text-faint); font-size:12.5px; margin:0 0 6px;"></p>
             <h1 id="customerDetailName">-</h1>
             <p id="customerDetailMeta"></p>
           </div>
@@ -1229,6 +1262,41 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
   </form>
 </dialog>
 
+<!-- ============ Add / edit customer project dialog ============ -->
+<dialog id="projectDialog">
+  <form method="dialog" id="projectForm">
+    <div class="dialog-head">
+      <h3 id="projectDialogTitle">เพิ่มโปรเจคใหม่</h3>
+      <button type="button" class="btn-ghost" data-close-dialog="projectDialog">✕</button>
+    </div>
+    <div class="dialog-body">
+      <input type="hidden" id="projectId">
+      <input type="hidden" id="projectCustomerId">
+      <div class="field">
+        <label for="pjName">ชื่อโปรเจค</label>
+        <input type="text" id="pjName" required>
+      </div>
+      <div class="field">
+        <label for="pjStatus">สถานะ</label>
+        <select id="pjStatus">
+          <option value="รอเริ่มงาน">รอเริ่มงาน</option>
+          <option value="กำลังดำเนินการ">กำลังดำเนินการ</option>
+          <option value="เสร็จสิ้น">เสร็จสิ้น</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="pjNote">หมายเหตุ (ไม่บังคับ)</label>
+        <textarea id="pjNote" rows="2"></textarea>
+      </div>
+      <div class="form-error" id="projectFormError"></div>
+    </div>
+    <div class="dialog-foot">
+      <button type="button" class="btn" data-close-dialog="projectDialog">ยกเลิก</button>
+      <button type="submit" class="btn btn-primary" id="projectSubmitBtn">บันทึก</button>
+    </div>
+  </form>
+</dialog>
+
 <!-- ============ Add / edit BOQ item dialog ============ -->
 <dialog id="boqItemDialog">
   <form method="dialog" id="boqItemForm">
@@ -1566,7 +1634,9 @@ function runApp(sb, currentProfile){
   let returnHistoryItems = []; // returns for whichever date is selected on the สินค้าคืน table
   let returnHistoryDate = '';
   let boqItems = [];
+  let projects = [];
   let currentCustomerId = null;
+  let currentProjectId = null;
   let selectedCiProduct = null;
   let selectedBqProduct = null;
   let customerDetailTab = 'install';
@@ -1845,22 +1915,26 @@ function runApp(sb, currentProfile){
   }
 
   async function loadCustomers(){
-    const [{ data: c, error: cErr }, { data: ci, error: ciErr }, { data: bq, error: bqErr }] = await Promise.all([
+    const [{ data: c, error: cErr }, { data: ci, error: ciErr }, { data: bq, error: bqErr }, { data: pj, error: pjErr }] = await Promise.all([
       sb.from('customers').select('*').order('created_at', { ascending: false }),
       sb.from('customer_items').select('*').order('created_at', { ascending: false }),
-      sb.from('boq_items').select('*').order('created_at', { ascending: true })
+      sb.from('boq_items').select('*').order('created_at', { ascending: true }),
+      sb.from('projects').select('*').order('created_at', { ascending: false })
     ]);
 
     if (cErr) { showToast('โหลดข้อมูลลูกค้าไม่สำเร็จ: ' + cErr.message, true); return; }
     if (ciErr) { showToast('โหลดรายการสินค้าลูกค้าไม่สำเร็จ: ' + ciErr.message, true); return; }
     if (bqErr) { showToast('โหลดรายการ BOQ ไม่สำเร็จ: ' + bqErr.message, true); return; }
+    if (pjErr) { showToast('โหลดข้อมูลโปรเจคไม่สำเร็จ: ' + pjErr.message, true); return; }
 
     customers = c || [];
     customerItems = ci || [];
     boqItems = bq || [];
+    projects = pj || [];
 
     renderCustomers(document.getElementById('customerSearch') ? document.getElementById('customerSearch').value : '');
-    if (currentCustomerId) renderCustomerDetail(currentCustomerId);
+    if (currentProjectId) renderCustomerDetail(currentProjectId);
+    else if (currentCustomerId) renderCustomerProjects(currentCustomerId);
   }
 
   async function loadUsers(){
@@ -2495,19 +2569,86 @@ function runApp(sb, currentProfile){
   }
 
 
-  function openCustomerDetail(id){
-    currentCustomerId = id;
-    customerDetailTab = 'install';
+  // ---------------- Customer → Projects (a customer can have several projects, each with its own เบิกสินค้า/BOQ) ----------------
+  function openCustomerProjects(customerId){
+    currentCustomerId = customerId;
+    currentProjectId = null;
     document.getElementById('customerListWrap').style.display = 'none';
-    document.getElementById('customerDetailWrap').style.display = 'block';
-    showCustomerTab('install');
-    renderCustomerDetail(id);
+    document.getElementById('customerDetailWrap').style.display = 'none';
+    document.getElementById('customerProjectsWrap').style.display = 'block';
+    renderCustomerProjects(customerId);
   }
 
   function backToCustomerList(){
     currentCustomerId = null;
+    currentProjectId = null;
     document.getElementById('customerDetailWrap').style.display = 'none';
+    document.getElementById('customerProjectsWrap').style.display = 'none';
     document.getElementById('customerListWrap').style.display = 'block';
+  }
+
+  function backToCustomerProjects(){
+    currentProjectId = null;
+    document.getElementById('customerDetailWrap').style.display = 'none';
+    document.getElementById('customerProjectsWrap').style.display = 'block';
+    if (currentCustomerId) renderCustomerProjects(currentCustomerId);
+  }
+
+  function renderCustomerProjects(customerId){
+    const customer = customers.find(c => c.id === customerId);
+    if (!customer){ backToCustomerList(); return; }
+
+    document.getElementById('projectsCustomerName').textContent = customer.name;
+    document.getElementById('projectsCustomerMeta').textContent =
+      [customer.phone, customer.address].filter(Boolean).join(' · ') || 'ไม่มีข้อมูลติดต่อเพิ่มเติม';
+
+    const rows = projects.filter(p => p.customer_id === customerId);
+    document.getElementById('projectCount').textContent = `(${rows.length})`;
+    const body = document.getElementById('projectsBody');
+
+    if (!rows.length){
+      body.innerHTML = `<tr><td colspan="5" class="empty-note">ยังไม่มีโปรเจคสำหรับลูกค้ารายนี้</td></tr>`;
+      return;
+    }
+
+    body.innerHTML = rows.map(p => {
+      const installCount = customerItems.filter(i => i.project_id === p.id).length;
+      const boqTotal = boqItems.filter(i => i.project_id === p.id)
+        .reduce((s, i) => s + Number(i.unit_price) * Number(i.quantity), 0);
+      const statusBadge = p.status === 'เสร็จสิ้น' ? 'badge-ok' : (p.status === 'รอเริ่มงาน' ? 'badge-neutral' : 'badge-low');
+      return `
+        <tr data-id="${p.id}">
+          <td>
+            <div class="product-name">${escapeHtml(p.name)}</div>
+            <div class="product-sku mono">${escapeHtml(p.note || '')}</div>
+          </td>
+          <td><span class="badge ${statusBadge}">${escapeHtml(p.status)}</span></td>
+          <td class="num mono">${int(installCount)}</td>
+          <td class="num mono">฿${money(boqTotal)}</td>
+          <td>
+            <div class="row-actions">
+              <button class="btn-ghost" data-open-project="${p.id}">เปิดโปรเจค</button>
+              <button class="btn-ghost" data-edit-project="${p.id}" data-admin-only>แก้ไข</button>
+              <button class="btn-ghost" data-delete-project="${p.id}" data-admin-only>ลบ</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  // ---------------- Project detail (เบิกสินค้า / BOQ tabs, scoped to one project) ----------------
+  function openProjectDetail(projectId){
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+    currentCustomerId = project.customer_id;
+    currentProjectId = projectId;
+    customerDetailTab = 'install';
+    document.getElementById('customerListWrap').style.display = 'none';
+    document.getElementById('customerProjectsWrap').style.display = 'none';
+    document.getElementById('customerDetailWrap').style.display = 'block';
+    showCustomerTab('install');
+    renderCustomerDetail(projectId);
   }
 
   function showCustomerTab(tab){
@@ -2522,25 +2663,28 @@ function runApp(sb, currentProfile){
   document.getElementById('btnCustTabInstall').addEventListener('click', () => showCustomerTab('install'));
   document.getElementById('btnCustTabBoq').addEventListener('click', () => showCustomerTab('boq'));
 
-  function renderCustomerDetail(id){
-    const customer = customers.find(c => c.id === id);
-    if (!customer){ backToCustomerList(); return; }
+  function renderCustomerDetail(projectId){
+    const project = projects.find(p => p.id === projectId);
+    if (!project){ backToCustomerProjects(); return; }
+    const customer = customers.find(c => c.id === project.customer_id);
 
-    document.getElementById('customerDetailName').textContent = customer.name;
+    document.getElementById('projectBreadcrumb').textContent =
+      (customer ? customer.name : 'ลูกค้า') + '  /  ' + project.name;
+    document.getElementById('customerDetailName').textContent = project.name;
     document.getElementById('customerDetailMeta').textContent =
-      [customer.phone, customer.address].filter(Boolean).join(' · ') || 'ไม่มีข้อมูลติดต่อเพิ่มเติม';
+      [customer ? customer.name : null, customer ? customer.phone : null, project.status].filter(Boolean).join(' · ');
 
-    renderCustomerInstallItems(id);
-    renderBoqItems(id);
+    renderCustomerInstallItems(projectId);
+    renderBoqItems(projectId);
   }
 
-  function renderCustomerInstallItems(id){
-    const items = customerItems.filter(i => i.customer_id === id);
+  function renderCustomerInstallItems(projectId){
+    const items = customerItems.filter(i => i.project_id === projectId);
     document.getElementById('customerItemCount').textContent = `(${items.length})`;
     const body = document.getElementById('customerItemsBody');
 
     if (!items.length){
-      body.innerHTML = `<tr><td colspan="5" class="empty-note">ยังไม่มีสินค้าในรายการของลูกค้ารายนี้</td></tr>`;
+      body.innerHTML = `<tr><td colspan="5" class="empty-note">ยังไม่มีสินค้าในรายการของโปรเจคนี้</td></tr>`;
       return;
     }
 
@@ -2576,13 +2720,13 @@ function runApp(sb, currentProfile){
   }
 
   // ---------------- BOQ (ใบขอราคา) — pricing only, does not touch stock ----------------
-  function renderBoqItems(id){
-    const items = boqItems.filter(i => i.customer_id === id);
+  function renderBoqItems(projectId){
+    const items = boqItems.filter(i => i.project_id === projectId);
     document.getElementById('boqItemCount').textContent = `(${items.length})`;
     const body = document.getElementById('boqItemsBody');
 
     if (!items.length){
-      body.innerHTML = `<tr><td colspan="6" class="empty-note">ยังไม่มีรายการ BOQ สำหรับลูกค้ารายนี้</td></tr>`;
+      body.innerHTML = `<tr><td colspan="6" class="empty-note">ยังไม่มีรายการ BOQ สำหรับโปรเจคนี้</td></tr>`;
       return;
     }
 
@@ -2894,12 +3038,13 @@ function runApp(sb, currentProfile){
     const viewId = e.target.dataset.view;
     const editId = e.target.dataset.editC;
     const delId = e.target.dataset.deleteC;
-    if (viewId) openCustomerDetail(viewId);
+    if (viewId) openCustomerProjects(viewId);
     if (editId) openCustomerDialog(customers.find(c => c.id === editId));
     if (delId) deleteCustomer(delId);
   });
 
-  document.getElementById('btnBackToCustomers').addEventListener('click', backToCustomerList);
+  document.getElementById('btnBackToCustomersFromProjects').addEventListener('click', backToCustomerList);
+  document.getElementById('btnBackToProjects').addEventListener('click', backToCustomerProjects);
 
   function openCustomerDialog(customer){
     document.getElementById('customerFormError').textContent = '';
@@ -2961,12 +3106,81 @@ function runApp(sb, currentProfile){
     loadCustomers();
   }
 
+  // ---------------- Projects (a customer can have several; each has its own เบิกสินค้า/BOQ) — admin manages, staff can still view/use ----------------
+  const projectDialog = document.getElementById('projectDialog');
+  const projectForm = document.getElementById('projectForm');
+
+  document.getElementById('btnAddProject').addEventListener('click', () => openProjectDialog());
+
+  function openProjectDialog(project){
+    document.getElementById('projectFormError').textContent = '';
+    document.getElementById('projectDialogTitle').textContent = project ? 'แก้ไขโปรเจค' : 'เพิ่มโปรเจคใหม่';
+    document.getElementById('projectId').value = project ? project.id : '';
+    document.getElementById('projectCustomerId').value = project ? project.customer_id : currentCustomerId;
+    document.getElementById('pjName').value = project ? project.name : '';
+    document.getElementById('pjStatus').value = project ? project.status : 'กำลังดำเนินการ';
+    document.getElementById('pjNote').value = project ? (project.note || '') : '';
+    projectDialog.showModal();
+  }
+
+  projectForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('projectId').value;
+    const customerId = document.getElementById('projectCustomerId').value;
+    const errEl = document.getElementById('projectFormError');
+    const payload = {
+      customer_id: customerId,
+      name: document.getElementById('pjName').value.trim(),
+      status: document.getElementById('pjStatus').value,
+      note: document.getElementById('pjNote').value.trim() || null,
+    };
+
+    if (!payload.name){ errEl.textContent = 'กรุณากรอกชื่อโปรเจค'; return; }
+
+    const submitBtn = document.getElementById('projectSubmitBtn');
+    submitBtn.disabled = true;
+
+    const { error } = id
+      ? await sb.from('projects').update(payload).eq('id', id)
+      : await sb.from('projects').insert(payload);
+
+    submitBtn.disabled = false;
+
+    if (error){ errEl.textContent = 'บันทึกไม่สำเร็จ: ' + error.message; return; }
+
+    projectDialog.close();
+    showToast(id ? 'แก้ไขโปรเจคเรียบร้อย' : 'เพิ่มโปรเจคเรียบร้อย');
+    await loadCustomers();
+  });
+
+  document.getElementById('projectsBody').addEventListener('click', (e) => {
+    const openId = e.target.dataset.openProject;
+    const editId = e.target.dataset.editProject;
+    const delId = e.target.dataset.deleteProject;
+    if (openId) openProjectDetail(openId);
+    if (editId) openProjectDialog(projects.find(p => p.id === editId));
+    if (delId) deleteProject(delId);
+  });
+
+  async function deleteProject(id){
+    const project = projects.find(p => p.id === id);
+    if (!project) return;
+    if (!confirm(`ลบโปรเจค "${project.name}" ใช่หรือไม่? รายการเบิกสินค้าและ BOQ ของโปรเจคนี้จะถูกลบไปด้วย (สต็อกจะไม่ถูกคืนอัตโนมัติ)`)) return;
+
+    const { error } = await sb.from('projects').delete().eq('id', id);
+    if (error){ showToast('ลบไม่สำเร็จ: ' + error.message, true); return; }
+
+    if (currentProjectId === id) backToCustomerProjects();
+    showToast('ลบโปรเจคเรียบร้อย');
+    await loadCustomers();
+  }
+
   // ---------------- Add product to customer (admin + staff) ----------------
   const customerItemDialog = document.getElementById('customerItemDialog');
   const customerItemForm = document.getElementById('customerItemForm');
 
   function openAddCustomerItemDialog(){
-    if (!currentCustomerId) return;
+    if (!currentProjectId) return;
     document.getElementById('customerItemFormError').textContent = '';
     document.getElementById('customerItemDialogTitle').textContent = 'เพิ่มสินค้าให้ลูกค้า';
     document.getElementById('customerItemSubmitBtn').textContent = 'เพิ่มรายการ';
@@ -3124,8 +3338,8 @@ function runApp(sb, currentProfile){
 
     submitBtn.disabled = true;
 
-    const { error: rpcErr } = await sb.rpc('add_customer_item', {
-      p_customer_id: currentCustomerId,
+    const { error: rpcErr } = await sb.rpc('add_project_item', {
+      p_project_id: currentProjectId,
       p_product_id: product.id,
       p_quantity: qty,
       p_unit_price: price,
@@ -3217,9 +3431,10 @@ function runApp(sb, currentProfile){
   document.getElementById('btnExportExcel').addEventListener('click', () => exportCustomerItems('xlsx'));
 
   function exportCustomerItems(format){
-    if (!currentCustomerId) return;
+    if (!currentProjectId) return;
     const customer = customers.find(c => c.id === currentCustomerId);
-    const items = customerItems.filter(i => i.customer_id === currentCustomerId);
+    const project = projects.find(p => p.id === currentProjectId);
+    const items = customerItems.filter(i => i.project_id === currentProjectId);
 
     if (!items.length){ showToast('ไม่มีรายการให้ export', true); return; }
 
@@ -3233,8 +3448,8 @@ function runApp(sb, currentProfile){
     const grandTotal = rows.reduce((s, r) => s + r['รวมเป็นเงิน'], 0);
     rows.push({ 'สินค้า': '', 'รหัสสินค้า': '', 'ราคาต่อหน่วย': '', 'จำนวน': 'รวมทั้งหมด', 'รวมเป็นเงิน': grandTotal });
 
-    const safeName = (customer?.name || 'customer').replace(/[^a-zA-Z0-9ก-๙_-]+/g, '_');
-    const filenameBase = `customer-${safeName}`;
+    const safeName = ((customer?.name || 'customer') + '-' + (project?.name || 'project')).replace(/[^a-zA-Z0-9ก-๙_-]+/g, '_');
+    const filenameBase = `install-${safeName}`;
 
     if (format === 'csv'){
       const headers = Object.keys(rows[0]);
@@ -3271,7 +3486,7 @@ function runApp(sb, currentProfile){
   const boqItemForm = document.getElementById('boqItemForm');
 
   function openAddBoqItemDialog(){
-    if (!currentCustomerId) return;
+    if (!currentProjectId) return;
     document.getElementById('boqItemFormError').textContent = '';
     document.getElementById('boqItemDialogTitle').textContent = 'เพิ่มรายการ BOQ';
     document.getElementById('boqItemSubmitBtn').textContent = 'เพิ่มรายการ';
@@ -3388,6 +3603,7 @@ function runApp(sb, currentProfile){
     } else {
       ({ error } = await sb.from('boq_items').insert({
         customer_id: currentCustomerId,
+        project_id: currentProjectId,
         product_id: selectedBqProduct ? selectedBqProduct.id : null,
         item_name: name, note, quantity: qty, unit_price: price
       }));
@@ -3428,9 +3644,10 @@ function runApp(sb, currentProfile){
   document.getElementById('btnBoqExportExcel').addEventListener('click', () => exportBoqItems('xlsx'));
 
   function exportBoqItems(format){
-    if (!currentCustomerId) return;
+    if (!currentProjectId) return;
     const customer = customers.find(c => c.id === currentCustomerId);
-    const items = boqItems.filter(i => i.customer_id === currentCustomerId);
+    const project = projects.find(p => p.id === currentProjectId);
+    const items = boqItems.filter(i => i.project_id === currentProjectId);
 
     if (!items.length){ showToast('ไม่มีรายการ BOQ ให้ export', true); return; }
 
@@ -3444,7 +3661,7 @@ function runApp(sb, currentProfile){
     const grandTotal = rows.reduce((s, r) => s + r['รวมเป็นเงิน'], 0);
     rows.push({ 'รายการ': '', 'หมายเหตุ': '', 'จำนวน': '', 'ราคาต่อหน่วย': 'รวมทั้งหมด', 'รวมเป็นเงิน': grandTotal });
 
-    const safeName = (customer?.name || 'customer').replace(/[^a-zA-Z0-9ก-๙_-]+/g, '_');
+    const safeName = ((customer?.name || 'customer') + '-' + (project?.name || 'project')).replace(/[^a-zA-Z0-9ก-๙_-]+/g, '_');
     const filenameBase = `boq-${safeName}`;
 
     if (format === 'csv'){
@@ -3470,8 +3687,8 @@ function runApp(sb, currentProfile){
   window.addEventListener('afterprint', () => document.body.classList.remove('printing-boq'));
 
   function printBoqList(){
-    if (!currentCustomerId) return;
-    const items = boqItems.filter(i => i.customer_id === currentCustomerId);
+    if (!currentProjectId) return;
+    const items = boqItems.filter(i => i.project_id === currentProjectId);
     if (!items.length){ showToast('ไม่มีรายการ BOQ ให้พิมพ์', true); return; }
     window.print();
   }
