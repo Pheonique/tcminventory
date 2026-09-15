@@ -1313,6 +1313,10 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
           <div id="bqProductResults" class="combo-results"></div>
         </div>
       </div>
+      <div class="field" id="bqLotField" style="display:none;">
+        <label for="bqLot">ล็อตสินค้า (เลือกเพื่อดึงราคาจากล็อตนั้น)</label>
+        <select id="bqLot" class="status-select" style="width:100%;"></select>
+      </div>
       <div class="field">
         <label for="bqItemName">รายการ</label>
         <input type="text" id="bqItemName" required>
@@ -1901,7 +1905,7 @@ function runApp(sb, currentProfile){
       .sort((a, b) => new Date(a.received_at) - new Date(b.received_at));
   }
 
-  function lotOptionsHtml(productId, selectedLotId){
+  function lotOptionsHtml(productId, selectedLotId, allowDepleted){
     const lots = lotsForProduct(productId);
     if (!lots.length){
       return '<option value="">— ไม่มีล็อตสินค้านี้ —</option>';
@@ -1910,8 +1914,22 @@ function runApp(sb, currentProfile){
       const depleted = Number(l.quantity_remaining) <= 0;
       const label = `${dt(l.received_at)} · เหลือ ${int(l.quantity_remaining)} @ ฿${money(l.cost_price)}` + (depleted ? ' (หมด)' : '');
       const selected = l.id === selectedLotId ? 'selected' : '';
-      return `<option value="${l.id}" data-remaining="${l.quantity_remaining}" ${depleted ? 'disabled' : ''} ${selected}>${escapeHtml(label)}</option>`;
+      const disabled = (depleted && !allowDepleted) ? 'disabled' : '';
+      return `<option value="${l.id}" data-remaining="${l.quantity_remaining}" data-cost="${l.cost_price}" ${disabled} ${selected}>${escapeHtml(label)}</option>`;
     }).join('');
+  }
+
+  // BOQ is pricing-only (doesn't draw down stock), so every lot — including depleted ones —
+  // stays pickable purely as a price reference; a first option lets the user fall back to the
+  // product's latest cost price instead of any specific lot.
+  function boqLotOptionsHtml(productId){
+    const lots = lotsForProduct(productId);
+    const lotOptions = lots.map(l => {
+      const depleted = Number(l.quantity_remaining) <= 0;
+      const label = `${dt(l.received_at)} · เหลือ ${int(l.quantity_remaining)} @ ฿${money(l.cost_price)}` + (depleted ? ' (หมด)' : '');
+      return `<option value="${l.id}" data-cost="${l.cost_price}">${escapeHtml(label)}</option>`;
+    }).join('');
+    return '<option value="">— ใช้ราคาล่าสุดของสินค้า —</option>' + lotOptions;
   }
 
   async function loadCustomers(){
@@ -3481,6 +3499,28 @@ function runApp(sb, currentProfile){
     URL.revokeObjectURL(url);
   }
 
+  // On phones/tablets a plain download just lands in the device's Downloads folder with
+  // no obvious way to forward it — so try the OS-level share sheet (LINE, email, etc.) first
+  // via the Web Share API, and only fall back to a plain download when that isn't supported.
+  async function shareOrDownloadBlob(blob, filename, mimeType, shareTitle){
+    let canShareFile = false;
+    try {
+      const file = new File([blob], filename, { type: mimeType });
+      canShareFile = !!(navigator.canShare && navigator.canShare({ files: [file] }));
+      if (canShareFile){
+        await navigator.share({ files: [file], title: shareTitle || filename });
+        return;
+      }
+    } catch (err){
+      if (err && err.name === 'AbortError') return; // user closed the share sheet — not an error
+      // otherwise fall through to a normal download below
+    }
+    downloadBlob(blob, filename);
+    if (!canShareFile){
+      showToast('เบราว์เซอร์นี้ยังไม่รองรับการแชร์ไฟล์โดยตรง ดาวน์โหลดไฟล์ไว้ให้แล้ว แชร์ไฟล์จากที่ดาวน์โหลดได้เลย');
+    }
+  }
+
   // ---------------- BOQ item dialog (add/edit) — admin + staff, no stock impact ----------------
   const boqItemDialog = document.getElementById('boqItemDialog');
   const boqItemForm = document.getElementById('boqItemForm');
@@ -3494,6 +3534,8 @@ function runApp(sb, currentProfile){
     selectedBqProduct = null;
     document.getElementById('bqProductSearch').value = '';
     document.getElementById('bqProductResults').style.display = 'none';
+    document.getElementById('bqLotField').style.display = 'none';
+    document.getElementById('bqLot').innerHTML = '';
     document.getElementById('bqItemName').value = '';
     document.getElementById('bqItemNote').value = '';
     document.getElementById('bqItemQty').value = 1;
@@ -3511,6 +3553,8 @@ function runApp(sb, currentProfile){
     selectedBqProduct = null;
     document.getElementById('bqProductSearch').value = '';
     document.getElementById('bqProductResults').style.display = 'none';
+    document.getElementById('bqLotField').style.display = 'none';
+    document.getElementById('bqLot').innerHTML = '';
     document.getElementById('bqItemName').value = item.item_name;
     document.getElementById('bqItemNote').value = item.note || '';
     document.getElementById('bqItemQty').value = item.quantity;
@@ -3544,6 +3588,9 @@ function runApp(sb, currentProfile){
   }
 
   document.getElementById('bqProductSearch').addEventListener('input', (e) => {
+    selectedBqProduct = null;
+    document.getElementById('bqLotField').style.display = 'none';
+    document.getElementById('bqLot').innerHTML = '';
     renderBqResults(e.target.value);
   });
 
@@ -3561,6 +3608,25 @@ function runApp(sb, currentProfile){
     document.getElementById('bqProductResults').style.display = 'none';
     document.getElementById('bqItemName').value = product.name;
     document.getElementById('bqItemPrice').value = product.cost_price || 0;
+    const lots = lotsForProduct(product.id);
+    if (lots.length){
+      document.getElementById('bqLotField').style.display = '';
+      document.getElementById('bqLot').innerHTML = boqLotOptionsHtml(product.id);
+    } else {
+      document.getElementById('bqLotField').style.display = 'none';
+      document.getElementById('bqLot').innerHTML = '';
+    }
+    updateBqTotalPreview();
+  });
+
+  document.getElementById('bqLot').addEventListener('change', (e) => {
+    const lotId = e.target.value;
+    if (lotId){
+      const lot = stockLots.find(l => l.id === lotId);
+      if (lot) document.getElementById('bqItemPrice').value = lot.cost_price;
+    } else if (selectedBqProduct){
+      document.getElementById('bqItemPrice').value = selectedBqProduct.cost_price || 0;
+    }
     updateBqTotalPreview();
   });
 
@@ -3643,13 +3709,15 @@ function runApp(sb, currentProfile){
   document.getElementById('btnBoqExportCsv').addEventListener('click', () => exportBoqItems('csv'));
   document.getElementById('btnBoqExportExcel').addEventListener('click', () => exportBoqItems('xlsx'));
 
-  function exportBoqItems(format){
-    if (!currentProjectId) return;
+  // Builds the export as an in-memory Blob (no download/share side-effect yet) so both the plain
+  // export buttons and the share-sheet flow can reuse the exact same rows/formatting.
+  function buildBoqExportBlob(format){
+    if (!currentProjectId) return null;
     const customer = customers.find(c => c.id === currentCustomerId);
     const project = projects.find(p => p.id === currentProjectId);
     const items = boqItems.filter(i => i.project_id === currentProjectId);
 
-    if (!items.length){ showToast('ไม่มีรายการ BOQ ให้ export', true); return; }
+    if (!items.length) return null;
 
     const rows = items.map(i => ({
       'รายการ': i.item_name,
@@ -3674,13 +3742,28 @@ function runApp(sb, currentProfile){
       );
       const csvContent = '﻿' + csvLines.join('\n');
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      downloadBlob(blob, filenameBase + '.csv');
+      return { blob, filename: filenameBase + '.csv', mime: 'text/csv', customer, project };
     } else {
       const ws = XLSX.utils.json_to_sheet(rows);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'BOQ');
-      XLSX.writeFile(wb, filenameBase + '.xlsx');
+      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      return { blob, filename: filenameBase + '.xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', customer, project };
     }
+  }
+
+  function exportBoqItems(format){
+    const built = buildBoqExportBlob(format);
+    if (!built){ showToast('ไม่มีรายการ BOQ ให้ export', true); return; }
+    downloadBlob(built.blob, built.filename);
+  }
+
+  async function shareBoqItems(format){
+    const built = buildBoqExportBlob(format);
+    if (!built){ showToast('ไม่มีรายการ BOQ ให้แชร์', true); return; }
+    const title = `BOQ ${built.customer?.name || ''}${built.project?.name ? ' / ' + built.project.name : ''}`.trim();
+    await shareOrDownloadBlob(built.blob, built.filename, built.mime, title);
   }
 
   window.addEventListener('beforeprint', () => document.body.classList.add('printing-boq'));
@@ -3701,15 +3784,15 @@ function runApp(sb, currentProfile){
     menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
   });
 
-  document.getElementById('boqShareMenu').addEventListener('click', (e) => {
+  document.getElementById('boqShareMenu').addEventListener('click', async (e) => {
     const btn = e.target.closest('.share-item');
     if (!btn) return;
     const fmt = btn.dataset.shareFormat;
     document.getElementById('boqShareMenu').style.display = 'none';
     if (fmt === 'pdf'){
-      printBoqList(); // ใช้กล่องพิมพ์ของเบราว์เซอร์ แล้วเลือกปลายทางเป็น "บันทึกเป็น PDF"
+      printBoqList(); // ใช้กล่องพิมพ์ของเบราว์เซอร์ แล้วเลือกปลายทางเป็น "บันทึกเป็น PDF" (บนมือถือ/แท็บเล็ตส่วนใหญ่มีปุ่มแชร์ในหน้าต่างพิมพ์นี้ด้วย)
     } else {
-      exportBoqItems(fmt);
+      await shareBoqItems(fmt); // เปิดหน้าต่างแชร์ของเครื่อง (LINE/อีเมล/ฯลฯ) พร้อมไฟล์แนบ ถ้าเบราว์เซอร์รองรับ
     }
   });
 
