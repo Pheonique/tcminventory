@@ -1033,6 +1033,19 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
       </div>
       <div class="field-row">
         <div class="field">
+          <label for="fBoqUnit">หน่วยสำหรับ BOQ (ไม่บังคับ)</label>
+          <input type="text" id="fBoqUnit" placeholder="เช่น เมตร (ถ้าสินค้านี้รับเข้าเป็นหน่วยหนึ่ง แต่ทำ BOQ เป็นอีกหน่วยหนึ่ง)">
+        </div>
+        <div class="field" id="fBoqFactorField">
+          <label for="fBoqFactor" id="fBoqFactorLabel">จำนวนต่อ 1 หน่วยนับ (ล็อตเริ่มต้น)</label>
+          <input type="number" id="fBoqFactor" min="0" step="any" placeholder="เช่น 305">
+        </div>
+      </div>
+      <div class="field" id="fBoqFactorHint" style="display:none; margin-top:-8px;">
+        <div class="sub" style="color: var(--text-faint); font-size:11.5px;">อัตราแปลงของล็อตถัดไปตั้งได้ตอนบันทึก "รับเข้า" (แต่ละล็อตกำหนดอัตราแปลงเองได้ เผื่อขนาดกล่อง/ม้วนไม่เท่ากันทุกรอบ)</div>
+      </div>
+      <div class="field-row">
+        <div class="field">
           <label for="fQuantity" id="fQuantityLabel">จำนวนคงเหลือเริ่มต้น</label>
           <input type="number" id="fQuantity" min="0" step="1" value="0" required>
         </div>
@@ -1115,6 +1128,11 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
               <label for="mQuantity">จำนวน</label>
               <input type="number" id="mQuantity" min="1" step="1" value="1">
             </div>
+          </div>
+
+          <div class="field" id="mBoqFactorField" style="display:none;">
+            <label for="mBoqFactor" id="mBoqFactorLabel">จำนวนต่อ 1 หน่วยนับ (สำหรับ BOQ, ล็อตนี้)</label>
+            <input type="number" id="mBoqFactor" min="0" step="any" placeholder="เช่น 305 — เว้นว่างได้ถ้าไม่ต้องใช้ใน BOQ">
           </div>
 
           <button type="button" class="btn btn-primary" id="btnAddCartLine" style="width:100%;">+ เพิ่มรายการ</button>
@@ -1317,6 +1335,10 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
         <label for="bqLot">ล็อตสินค้า (เลือกเพื่อดึงราคาจากล็อตนั้น)</label>
         <select id="bqLot" class="status-select" style="width:100%;"></select>
       </div>
+      <div class="field" id="bqUnitModeField" style="display:none;">
+        <label for="bqUnitMode">แปลงราคาเป็นหน่วย</label>
+        <select id="bqUnitMode" class="status-select" style="width:100%;"></select>
+      </div>
       <div class="field">
         <label for="bqItemName">รายการ</label>
         <input type="text" id="bqItemName" required>
@@ -1332,8 +1354,12 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
         </div>
         <div class="field">
           <label for="bqItemPrice">ราคาต่อหน่วย (บาท)</label>
-          <input type="number" id="bqItemPrice" min="0" step="0.01" value="0" required>
+          <input type="number" id="bqItemPrice" min="0" step="any" value="0" required>
         </div>
+      </div>
+      <div class="field">
+        <label for="bqUnitLabel">หน่วย (ไม่บังคับ)</label>
+        <input type="text" id="bqUnitLabel" placeholder="เช่น เมตร, กล่อง, ชิ้น, งาน">
       </div>
       <div class="field">
         <label>รวมเป็นเงิน</label>
@@ -2217,6 +2243,8 @@ function runApp(sb, currentProfile){
     document.getElementById('mQuantity').value = 1;
     document.getElementById('mQuantity').removeAttribute('max');
     document.getElementById('mLot').innerHTML = '';
+    document.getElementById('mBoqFactorField').style.display = 'none';
+    document.getElementById('mBoqFactor').value = '';
   }
 
   function selectMovementProduct(p){
@@ -2232,6 +2260,7 @@ function runApp(sb, currentProfile){
       document.getElementById('mLot').innerHTML = lotOptionsHtml(p.id, null);
       updateMQuantityMaxFromLot();
     }
+    updateMBoqFactorField();
   }
 
   function updateMQuantityMaxFromLot(){
@@ -2420,7 +2449,21 @@ function runApp(sb, currentProfile){
     } else {
       document.getElementById('mQuantity').removeAttribute('max');
     }
+    updateMBoqFactorField();
     renderCartTable();
+  }
+
+  // Shows the optional "units per lot" field (used only by BOQ pricing later, never touches real
+  // stock) — only meaningful when receiving stock ("รับเข้า") for a product that has a BOQ unit set.
+  function updateMBoqFactorField(){
+    const field = document.getElementById('mBoqFactorField');
+    const label = document.getElementById('mBoqFactorLabel');
+    const show = movementMode() === 'in' && selectedMovementProduct && selectedMovementProduct.boq_unit;
+    field.style.display = show ? '' : 'none';
+    if (show){
+      label.textContent = `จำนวน${selectedMovementProduct.boq_unit}ต่อ 1 ${selectedMovementProduct.unit || 'หน่วย'} (สำหรับ BOQ, ล็อตนี้)`;
+    }
+    if (!show) document.getElementById('mBoqFactor').value = '';
   }
 
   document.getElementById('mTypeIn').addEventListener('change', onMovementModeOrCustomerChanged);
@@ -2521,6 +2564,12 @@ function runApp(sb, currentProfile){
       lotLabel = `${dt(lot.received_at)} @ ฿${money(lot.cost_price)}`;
     }
 
+    let boqUnitFactor = null;
+    if (type === 'in' && product.boq_unit){
+      const raw = Number(document.getElementById('mBoqFactor').value);
+      boqUnitFactor = raw > 0 ? raw : null;
+    }
+
     movementCart.push({
       productId: product.id,
       sku: product.sku,
@@ -2529,7 +2578,8 @@ function runApp(sb, currentProfile){
       quantity: qty,
       unitPrice: price,
       lotId,
-      lotLabel
+      lotLabel,
+      boqUnitFactor
     });
 
     document.getElementById('mSku').value = '';
@@ -2540,6 +2590,9 @@ function runApp(sb, currentProfile){
     document.getElementById('mUnitPrice').value = '';
     document.getElementById('mLot').innerHTML = '';
     document.getElementById('mSkuResults').style.display = 'none';
+    selectedMovementProduct = null;
+    document.getElementById('mBoqFactorField').style.display = 'none';
+    document.getElementById('mBoqFactor').value = '';
     document.getElementById('mSku').focus();
 
     renderCartTable();
@@ -2759,7 +2812,7 @@ function runApp(sb, currentProfile){
             <div class="product-name">${escapeHtml(i.item_name)}</div>
             <div class="product-sku mono">${escapeHtml(i.note || '')}</div>
           </td>
-          <td class="num mono">${int(i.quantity)}</td>
+          <td class="num mono">${int(i.quantity)} ${escapeHtml(i.unit_label || '')}</td>
           <td class="num mono">฿${money(i.unit_price)}</td>
           <td class="num mono">฿${money(lineTotal)}</td>
           <td><div class="row-actions">
@@ -2894,6 +2947,10 @@ function runApp(sb, currentProfile){
     document.getElementById('fName').value = product ? product.name : '';
     document.getElementById('fCategory').value = product ? (product.category || '') : '';
     document.getElementById('fUnit').value = product ? (product.unit || 'ชิ้น') : 'ชิ้น';
+    document.getElementById('fBoqUnit').value = product ? (product.boq_unit || '') : '';
+    document.getElementById('fBoqFactor').value = '';
+    document.getElementById('fBoqFactorField').style.display = product ? 'none' : '';
+    document.getElementById('fBoqFactorHint').style.display = product ? '' : 'none';
     document.getElementById('fQuantity').value = product ? product.quantity : 0;
     document.getElementById('fReorder').value = product ? product.reorder_point : 0;
     document.getElementById('fCost').value = product ? product.cost_price : 0;
@@ -2919,11 +2976,14 @@ function runApp(sb, currentProfile){
       name: document.getElementById('fName').value.trim(),
       category: document.getElementById('fCategory').value.trim() || null,
       unit: document.getElementById('fUnit').value.trim() || 'ชิ้น',
+      boq_unit: document.getElementById('fBoqUnit').value.trim() || null,
       reorder_point: Number(document.getElementById('fReorder').value),
     };
 
     const initialQuantity = Number(document.getElementById('fQuantity').value);
     const initialCost = Number(document.getElementById('fCost').value);
+    const initialBoqFactorRaw = Number(document.getElementById('fBoqFactor').value);
+    const initialBoqFactor = initialBoqFactorRaw > 0 ? initialBoqFactorRaw : null;
     if (!id){
       // จำนวน/ราคาทุนตั้งได้เฉพาะตอนสร้างใหม่ (จะกลายเป็นล็อตแรกของสินค้านี้)
       payload.quantity = initialQuantity;
@@ -2961,6 +3021,7 @@ function runApp(sb, currentProfile){
         cost_price: initialCost,
         quantity_received: initialQuantity,
         quantity_remaining: initialQuantity,
+        boq_unit_factor: initialBoqFactor,
         note: 'สต๊อกเริ่มต้น'
       });
     }
@@ -3025,7 +3086,8 @@ function runApp(sb, currentProfile){
       product_id: l.productId,
       quantity: l.quantity,
       unit_price: l.unitPrice,
-      lot_id: l.lotId || null
+      lot_id: l.lotId || null,
+      boq_unit_factor: l.boqUnitFactor ?? null
     }));
 
     const { error } = await sb.rpc('record_movement_batch', {
@@ -3536,10 +3598,13 @@ function runApp(sb, currentProfile){
     document.getElementById('bqProductResults').style.display = 'none';
     document.getElementById('bqLotField').style.display = 'none';
     document.getElementById('bqLot').innerHTML = '';
+    document.getElementById('bqUnitModeField').style.display = 'none';
+    document.getElementById('bqUnitMode').innerHTML = '';
     document.getElementById('bqItemName').value = '';
     document.getElementById('bqItemNote').value = '';
     document.getElementById('bqItemQty').value = 1;
     document.getElementById('bqItemPrice').value = 0;
+    document.getElementById('bqUnitLabel').value = '';
     updateBqTotalPreview();
     boqItemDialog.showModal();
     setTimeout(() => document.getElementById('bqProductSearch').focus(), 50);
@@ -3555,10 +3620,13 @@ function runApp(sb, currentProfile){
     document.getElementById('bqProductResults').style.display = 'none';
     document.getElementById('bqLotField').style.display = 'none';
     document.getElementById('bqLot').innerHTML = '';
+    document.getElementById('bqUnitModeField').style.display = 'none';
+    document.getElementById('bqUnitMode').innerHTML = '';
     document.getElementById('bqItemName').value = item.item_name;
     document.getElementById('bqItemNote').value = item.note || '';
     document.getElementById('bqItemQty').value = item.quantity;
     document.getElementById('bqItemPrice').value = item.unit_price;
+    document.getElementById('bqUnitLabel').value = item.unit_label || '';
     updateBqTotalPreview();
     boqItemDialog.showModal();
   }
@@ -3591,6 +3659,8 @@ function runApp(sb, currentProfile){
     selectedBqProduct = null;
     document.getElementById('bqLotField').style.display = 'none';
     document.getElementById('bqLot').innerHTML = '';
+    document.getElementById('bqUnitModeField').style.display = 'none';
+    document.getElementById('bqUnitMode').innerHTML = '';
     renderBqResults(e.target.value);
   });
 
@@ -3608,6 +3678,7 @@ function runApp(sb, currentProfile){
     document.getElementById('bqProductResults').style.display = 'none';
     document.getElementById('bqItemName').value = product.name;
     document.getElementById('bqItemPrice').value = product.cost_price || 0;
+    document.getElementById('bqUnitLabel').value = product.unit || '';
     const lots = lotsForProduct(product.id);
     if (lots.length){
       document.getElementById('bqLotField').style.display = '';
@@ -3616,6 +3687,7 @@ function runApp(sb, currentProfile){
       document.getElementById('bqLotField').style.display = 'none';
       document.getElementById('bqLot').innerHTML = '';
     }
+    updateBqUnitModeOptions();
     updateBqTotalPreview();
   });
 
@@ -3626,6 +3698,46 @@ function runApp(sb, currentProfile){
       if (lot) document.getElementById('bqItemPrice').value = lot.cost_price;
     } else if (selectedBqProduct){
       document.getElementById('bqItemPrice').value = selectedBqProduct.cost_price || 0;
+    }
+    if (selectedBqProduct) document.getElementById('bqUnitLabel').value = selectedBqProduct.unit || '';
+    updateBqUnitModeOptions();
+    updateBqTotalPreview();
+  });
+
+  // Shows a convenience "price by BOQ unit instead" selector when the picked product has a BOQ
+  // unit configured AND the currently-selected lot carries a conversion factor for it (e.g. "1
+  // กล่อง = 305 เมตร" for that specific batch). Choosing it just auto-fills ราคาต่อหน่วย/หน่วย —
+  // both stay plain editable fields afterward, so this is a shortcut, not a locked-in mode.
+  function updateBqUnitModeOptions(){
+    const wrap = document.getElementById('bqUnitModeField');
+    const sel = document.getElementById('bqUnitMode');
+    const lotId = document.getElementById('bqLot').value;
+    const lot = lotId ? stockLots.find(l => l.id === lotId) : null;
+    const boqUnit = selectedBqProduct ? selectedBqProduct.boq_unit : null;
+    const factor = lot ? Number(lot.boq_unit_factor) : null;
+    if (!selectedBqProduct || !boqUnit || !(factor > 0)){
+      wrap.style.display = 'none';
+      sel.innerHTML = '';
+      return;
+    }
+    const baseUnit = selectedBqProduct.unit || 'หน่วย';
+    sel.innerHTML = `
+      <option value="base">ราคาต่อ ${escapeHtml(baseUnit)} (ตามล็อตที่เลือก)</option>
+      <option value="boq">ราคาต่อ ${escapeHtml(boqUnit)} (แปลงจากล็อตนี้ — 1 ${escapeHtml(baseUnit)} = ${factor} ${escapeHtml(boqUnit)})</option>
+    `;
+    wrap.style.display = '';
+  }
+
+  document.getElementById('bqUnitMode').addEventListener('change', (e) => {
+    const lotId = document.getElementById('bqLot').value;
+    const lot = lotId ? stockLots.find(l => l.id === lotId) : null;
+    const basePrice = lot ? Number(lot.cost_price) : (selectedBqProduct ? Number(selectedBqProduct.cost_price) || 0 : 0);
+    if (e.target.value === 'boq' && lot && Number(lot.boq_unit_factor) > 0){
+      document.getElementById('bqItemPrice').value = (basePrice / Number(lot.boq_unit_factor)).toFixed(4);
+      document.getElementById('bqUnitLabel').value = selectedBqProduct.boq_unit;
+    } else {
+      document.getElementById('bqItemPrice').value = basePrice;
+      document.getElementById('bqUnitLabel').value = selectedBqProduct ? (selectedBqProduct.unit || '') : '';
     }
     updateBqTotalPreview();
   });
@@ -3653,6 +3765,7 @@ function runApp(sb, currentProfile){
     const note = document.getElementById('bqItemNote').value.trim() || null;
     const qty = Number(document.getElementById('bqItemQty').value);
     const price = Number(document.getElementById('bqItemPrice').value);
+    const unitLabel = document.getElementById('bqUnitLabel').value.trim() || null;
 
     if (!name){ errEl.textContent = 'กรุณากรอกชื่อรายการ'; return; }
     if (!qty || qty <= 0){ errEl.textContent = 'กรุณากรอกจำนวนให้ถูกต้อง'; return; }
@@ -3664,14 +3777,14 @@ function runApp(sb, currentProfile){
     let error;
     if (editingId){
       ({ error } = await sb.from('boq_items').update({
-        item_name: name, note, quantity: qty, unit_price: price
+        item_name: name, note, quantity: qty, unit_price: price, unit_label: unitLabel
       }).eq('id', editingId));
     } else {
       ({ error } = await sb.from('boq_items').insert({
         customer_id: currentCustomerId,
         project_id: currentProjectId,
         product_id: selectedBqProduct ? selectedBqProduct.id : null,
-        item_name: name, note, quantity: qty, unit_price: price
+        item_name: name, note, quantity: qty, unit_price: price, unit_label: unitLabel
       }));
     }
 
@@ -3723,11 +3836,12 @@ function runApp(sb, currentProfile){
       'รายการ': i.item_name,
       'หมายเหตุ': i.note || '',
       'จำนวน': Number(i.quantity),
+      'หน่วย': i.unit_label || '',
       'ราคาต่อหน่วย': Number(i.unit_price),
       'รวมเป็นเงิน': Number(i.unit_price) * Number(i.quantity)
     }));
     const grandTotal = rows.reduce((s, r) => s + r['รวมเป็นเงิน'], 0);
-    rows.push({ 'รายการ': '', 'หมายเหตุ': '', 'จำนวน': '', 'ราคาต่อหน่วย': 'รวมทั้งหมด', 'รวมเป็นเงิน': grandTotal });
+    rows.push({ 'รายการ': '', 'หมายเหตุ': '', 'จำนวน': '', 'หน่วย': '', 'ราคาต่อหน่วย': 'รวมทั้งหมด', 'รวมเป็นเงิน': grandTotal });
 
     const safeName = ((customer?.name || 'customer') + '-' + (project?.name || 'project')).replace(/[^a-zA-Z0-9ก-๙_-]+/g, '_');
     const filenameBase = `boq-${safeName}`;
