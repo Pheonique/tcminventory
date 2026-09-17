@@ -1064,6 +1064,26 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
       <div class="field" id="fCostHint" style="display:none; margin-top:-8px;">
         <div class="sub" style="color: var(--text-faint); font-size:11.5px;">ราคาทุนจริงคำนวณแยกตามล็อตสินค้า (ดูที่หน้าบันทึกรับเข้า) ค่านี้ใช้เป็นข้อมูลอ้างอิงตอนสร้างสินค้าใหม่เท่านั้น</div>
       </div>
+      <div class="field" id="productLotsSection" style="display:none;">
+        <label>ล็อตสินค้าที่มีอยู่</label>
+        <div class="sub" style="color: var(--text-faint); font-size:11.5px; margin-bottom:6px;">สินค้าชิ้นนี้รับเข้ามาหลายครั้ง (หลายล็อต) แก้ไขจำนวนคงเหลือ/ราคาต้นทุน/อัตราแปลง BOQ/หมายเหตุ แยกทีละล็อตได้ที่นี่ แล้วกด "บันทึก" ในแถวนั้น</div>
+        <div style="max-height:260px; overflow:auto; border:1px solid var(--border, #333); border-radius:8px;">
+          <table style="width:100%; font-size:12.5px; border-collapse:collapse;">
+            <thead>
+              <tr>
+                <th style="text-align:left; padding:6px 8px; white-space:nowrap;">วันที่รับเข้า</th>
+                <th style="text-align:left; padding:6px 8px;">รับเข้า</th>
+                <th style="text-align:left; padding:6px 8px;">คงเหลือ</th>
+                <th style="text-align:left; padding:6px 8px;">ราคาต้นทุน/หน่วย</th>
+                <th style="text-align:left; padding:6px 8px;">อัตราแปลง BOQ</th>
+                <th style="text-align:left; padding:6px 8px;">หมายเหตุ</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="productLotsBody"></tbody>
+          </table>
+        </div>
+      </div>
       <div class="form-error" id="productFormError"></div>
     </div>
     <div class="dialog-foot">
@@ -3009,8 +3029,75 @@ function runApp(sb, currentProfile){
     document.getElementById('fQuantityLabel').textContent = product ? 'จำนวนคงเหลือ' : 'จำนวนคงเหลือเริ่มต้น';
     document.getElementById('fCostLabel').textContent = product ? 'ราคาต้นทุนต่อหน่วย (อ้างอิง)' : 'ราคาต้นทุนต่อหน่วย (บาท)';
 
+    document.getElementById('productLotsSection').style.display = product ? '' : 'none';
+    if (product) renderProductLots(product.id);
+
     productDialog.showModal();
   }
+
+  function renderProductLots(productId){
+    const body = document.getElementById('productLotsBody');
+    const lots = lotsForProduct(productId);
+    if (!lots.length){
+      body.innerHTML = '<tr><td colspan="7" class="empty-note">ไม่มีล็อตสินค้านี้</td></tr>';
+      return;
+    }
+    body.innerHTML = lots.map(l => `
+      <tr>
+        <td style="padding:6px 8px; white-space:nowrap;">${dt(l.received_at)}</td>
+        <td style="padding:6px 8px; white-space:nowrap;">${int(l.quantity_received)}</td>
+        <td style="padding:6px 8px;"><input type="number" min="0" max="${l.quantity_received}" step="any" value="${l.quantity_remaining}" class="lot-remaining" style="width:75px;"></td>
+        <td style="padding:6px 8px;"><input type="number" min="0" step="0.01" value="${l.cost_price}" class="lot-cost" style="width:85px;"></td>
+        <td style="padding:6px 8px;"><input type="number" min="0" step="any" value="${l.boq_unit_factor ?? ''}" class="lot-boqfactor" style="width:75px;" placeholder="-"></td>
+        <td style="padding:6px 8px;"><input type="text" value="${escapeHtml(l.note || '')}" class="lot-note" style="width:110px;"></td>
+        <td style="padding:6px 8px; white-space:nowrap;"><button type="button" class="btn-ghost" data-lot-save="${l.id}" data-admin-only>บันทึก</button></td>
+      </tr>
+    `).join('');
+  }
+
+  document.getElementById('productLotsBody').addEventListener('click', async (e) => {
+    const lotId = e.target.dataset.lotSave;
+    if (!lotId) return;
+
+    const row = e.target.closest('tr');
+    const remaining = Number(row.querySelector('.lot-remaining').value);
+    const cost = Number(row.querySelector('.lot-cost').value);
+    const boqFactorRaw = row.querySelector('.lot-boqfactor').value.trim();
+    const boqFactor = boqFactorRaw !== '' ? Number(boqFactorRaw) : null;
+    const note = row.querySelector('.lot-note').value.trim() || null;
+
+    if (!Number.isFinite(remaining) || remaining < 0){
+      showToast('จำนวนคงเหลือไม่ถูกต้อง', true);
+      return;
+    }
+    if (!Number.isFinite(cost) || cost < 0){
+      showToast('ราคาต้นทุนไม่ถูกต้อง', true);
+      return;
+    }
+
+    e.target.disabled = true;
+    const { error } = await sb.rpc('update_stock_lot', {
+      p_lot_id: lotId,
+      p_cost_price: cost,
+      p_quantity_remaining: remaining,
+      p_boq_unit_factor: boqFactor,
+      p_note: note
+    });
+    e.target.disabled = false;
+
+    if (error){
+      showToast('บันทึกล็อตไม่สำเร็จ: ' + error.message, true);
+      return;
+    }
+
+    showToast('แก้ไขล็อตสินค้าเรียบร้อย');
+    await loadAll();
+
+    const productId = document.getElementById('productId').value;
+    const refreshed = products.find(p => p.id === productId);
+    if (refreshed) document.getElementById('fQuantity').value = refreshed.quantity;
+    if (productId) renderProductLots(productId);
+  });
 
   productForm.addEventListener('submit', async (e) => {
     e.preventDefault();
