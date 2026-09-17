@@ -1066,11 +1066,18 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
       </div>
       <div class="field" id="productLotsSection" style="display:none;">
         <label>ล็อตสินค้าที่มีอยู่</label>
-        <div class="sub" style="color: var(--text-faint); font-size:11.5px; margin-bottom:6px;">สินค้าชิ้นนี้รับเข้ามาหลายครั้ง (หลายล็อต) แก้ไขจำนวนคงเหลือ/ราคาต้นทุน/อัตราแปลง BOQ/หมายเหตุ แยกทีละล็อตได้ที่นี่ แล้วกด "บันทึก" ในแถวนั้น</div>
+        <div class="sub" style="color: var(--text-faint); font-size:11.5px; margin-bottom:6px;">สินค้าชิ้นนี้รับเข้ามาหลายครั้ง (หลายล็อต) แก้ไขจำนวนคงเหลือ/ราคาต้นทุน/อัตราแปลง BOQ/หมายเหตุ แยกทีละล็อตได้ที่นี่ แล้วกด "บันทึก" ในแถวนั้น — ล็อตที่คงเหลือ 0 แล้วเลือกได้ที่ช่องติ๊กด้านซ้าย เพื่อลบทิ้งทีเดียวหลายล็อต ไม่ต้องกดลบทีละล็อต (ล็อตเก่าที่หมดสะสมไว้เยอะๆ จะทำให้รายการล็อตตอนเลือกทำ BOQ/โปรเจครกและเสี่ยงเลือกราคาผิด)</div>
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+          <label style="display:flex; align-items:center; gap:5px; font-size:12px; cursor:pointer;">
+            <input type="checkbox" id="lotSelectAllDepleted"> เลือกล็อตที่หมดทั้งหมด
+          </label>
+          <button type="button" class="btn-ghost" id="btnBulkDeleteLots" data-admin-only disabled style="font-size:12px; color:#e05555;">ลบล็อตที่เลือก (<span id="lotSelectedCount">0</span>)</button>
+        </div>
         <div style="max-height:260px; overflow:auto; border:1px solid var(--border, #333); border-radius:8px;">
           <table style="width:100%; font-size:12.5px; border-collapse:collapse;">
             <thead>
               <tr>
+                <th style="padding:6px 8px;"></th>
                 <th style="text-align:left; padding:6px 8px; white-space:nowrap;">วันที่รับเข้า</th>
                 <th style="text-align:left; padding:6px 8px;">รับเข้า</th>
                 <th style="text-align:left; padding:6px 8px;">คงเหลือ</th>
@@ -3039,7 +3046,8 @@ function runApp(sb, currentProfile){
     const body = document.getElementById('productLotsBody');
     const lots = lotsForProduct(productId);
     if (!lots.length){
-      body.innerHTML = '<tr><td colspan="7" class="empty-note">ไม่มีล็อตสินค้านี้</td></tr>';
+      body.innerHTML = '<tr><td colspan="8" class="empty-note">ไม่มีล็อตสินค้านี้</td></tr>';
+      updateLotBulkDeleteUI();
       return;
     }
     body.innerHTML = lots.map(l => {
@@ -3047,6 +3055,7 @@ function runApp(sb, currentProfile){
       const deleteAttrs = isDepleted ? '' : `disabled title="ลบได้เฉพาะล็อตที่คงเหลือ 0 เท่านั้น"`;
       return `
       <tr>
+        <td style="padding:6px 8px;"><input type="checkbox" class="lot-select-checkbox" data-lot-id="${l.id}" ${isDepleted ? '' : 'disabled title="เลือกได้เฉพาะล็อตที่คงเหลือ 0 เท่านั้น"'}></td>
         <td style="padding:6px 8px; white-space:nowrap;">${dt(l.received_at)}</td>
         <td style="padding:6px 8px; white-space:nowrap;">${int(l.quantity_received)}</td>
         <td style="padding:6px 8px;"><input type="number" min="0" max="${l.quantity_received}" step="any" value="${l.quantity_remaining}" class="lot-remaining" style="width:75px;"></td>
@@ -3060,7 +3069,51 @@ function runApp(sb, currentProfile){
       </tr>
     `;
     }).join('');
+    updateLotBulkDeleteUI();
   }
+
+  function updateLotBulkDeleteUI(){
+    const checkboxes = Array.from(document.querySelectorAll('#productLotsBody .lot-select-checkbox'));
+    const enabled = checkboxes.filter(cb => !cb.disabled);
+    const checked = enabled.filter(cb => cb.checked);
+    document.getElementById('lotSelectedCount').textContent = checked.length;
+    document.getElementById('btnBulkDeleteLots').disabled = checked.length === 0;
+    const selectAll = document.getElementById('lotSelectAllDepleted');
+    selectAll.disabled = enabled.length === 0;
+    selectAll.checked = enabled.length > 0 && checked.length === enabled.length;
+    selectAll.indeterminate = checked.length > 0 && checked.length < enabled.length;
+  }
+
+  document.getElementById('lotSelectAllDepleted').addEventListener('change', (e) => {
+    const checked = e.target.checked;
+    document.querySelectorAll('#productLotsBody .lot-select-checkbox').forEach(cb => {
+      if (!cb.disabled) cb.checked = checked;
+    });
+    updateLotBulkDeleteUI();
+  });
+
+  document.getElementById('productLotsBody').addEventListener('change', (e) => {
+    if (e.target.classList.contains('lot-select-checkbox')) updateLotBulkDeleteUI();
+  });
+
+  document.getElementById('btnBulkDeleteLots').addEventListener('click', async () => {
+    const ids = Array.from(document.querySelectorAll('#productLotsBody .lot-select-checkbox:checked')).map(cb => cb.dataset.lotId);
+    if (!ids.length) return;
+    if (!confirm(`ลบล็อตที่เลือกไว้ ${ids.length} ล็อตใช่หรือไม่? ลบแล้วกู้คืนไม่ได้ (ลบได้เฉพาะล็อตที่คงเหลือ 0 เท่านั้น)`)) return;
+
+    const btn = document.getElementById('btnBulkDeleteLots');
+    btn.disabled = true;
+    const { error } = await sb.rpc('delete_stock_lots', { p_lot_ids: ids });
+
+    if (error){
+      showToast('ลบล็อตไม่สำเร็จ: ' + error.message, true);
+      btn.disabled = false;
+      return;
+    }
+
+    showToast(`ลบล็อตที่เลือกเรียบร้อย (${ids.length} ล็อต)`);
+    await refreshProductLotsView();
+  });
 
   async function refreshProductLotsView(){
     await loadAll();
