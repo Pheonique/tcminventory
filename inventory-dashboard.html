@@ -1093,9 +1093,12 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
       </div>
       <div class="form-error" id="productFormError"></div>
     </div>
-    <div class="dialog-foot">
-      <button type="button" class="btn" data-close-dialog="productDialog">ยกเลิก</button>
-      <button type="submit" class="btn btn-primary" id="productSubmitBtn">บันทึก</button>
+    <div class="dialog-foot" style="flex-direction:column; align-items:flex-end; gap:4px;">
+      <div id="productSubmitBlockedHint" style="display:none; color:#e0a855; font-size:11.5px;">ยกเลิกการเลือกล็อตที่จะลบก่อน จึงจะบันทึกข้อมูลอื่นได้</div>
+      <div style="display:flex; gap:8px;">
+        <button type="button" class="btn" data-close-dialog="productDialog">ยกเลิก</button>
+        <button type="submit" class="btn btn-primary" id="productSubmitBtn">บันทึก</button>
+      </div>
     </div>
   </form>
 </dialog>
@@ -3037,6 +3040,8 @@ function runApp(sb, currentProfile){
     document.getElementById('fCostLabel').textContent = product ? 'ราคาต้นทุนต่อหน่วย (อ้างอิง)' : 'ราคาต้นทุนต่อหน่วย (บาท)';
 
     document.getElementById('productLotsSection').style.display = product ? '' : 'none';
+    document.getElementById('productSubmitBtn').disabled = false;
+    document.getElementById('productSubmitBlockedHint').style.display = 'none';
     if (product) renderProductLots(product.id);
 
     productDialog.showModal();
@@ -3082,6 +3087,11 @@ function runApp(sb, currentProfile){
     selectAll.disabled = enabled.length === 0;
     selectAll.checked = enabled.length > 0 && checked.length === enabled.length;
     selectAll.indeterminate = checked.length > 0 && checked.length < enabled.length;
+
+    // เลือกล็อตที่จะลบค้างอยู่ -> ปิดปุ่ม "บันทึก" หลัก กันกดผิดปุ่มแล้วเข้าใจว่าล็อตถูกลบไปด้วย
+    // (บันทึก แก้ไขแค่ข้อมูลสินค้า/แถวล็อตทีละแถวเท่านั้น ไม่เกี่ยวกับการลบล็อตที่เลือกไว้)
+    document.getElementById('productSubmitBtn').disabled = checked.length > 0;
+    document.getElementById('productSubmitBlockedHint').style.display = checked.length > 0 ? '' : 'none';
   }
 
   document.getElementById('lotSelectAllDepleted').addEventListener('change', (e) => {
@@ -3112,7 +3122,8 @@ function runApp(sb, currentProfile){
     }
 
     showToast(`ลบล็อตที่เลือกเรียบร้อย (${ids.length} ล็อต)`);
-    await refreshProductLotsView();
+    await loadAll();
+    productDialog.close();
   });
 
   async function refreshProductLotsView(){
