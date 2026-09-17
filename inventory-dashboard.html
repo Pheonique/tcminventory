@@ -3203,6 +3203,12 @@ function runApp(sb, currentProfile){
   async function deleteProduct(id){
     const product = products.find(p => p.id === id);
     if (!product) return;
+
+    if (Number(product.quantity) !== 0){
+      showToast(`ลบไม่ได้ เพราะสินค้านี้ยังเหลืออยู่ ${int(product.quantity)} ${product.unit || ''} กรุณาเบิกออกให้เหลือ 0 ก่อนลบ`, true);
+      return;
+    }
+
     if (!confirm(`ลบสินค้า "${product.name}" ใช่หรือไม่? ประวัติที่เกี่ยวข้องจะถูกลบไปด้วย`)) return;
 
     const { error } = await sb.from('products').delete().eq('id', id);
