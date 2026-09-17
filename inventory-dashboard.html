@@ -1100,6 +1100,11 @@ const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";</pre>
             </div>
           </div>
 
+          <div class="field" id="mProjectField" style="display:none;">
+            <label for="mProject">โปรเจคของลูกค้า</label>
+            <select id="mProject" class="status-select" style="width:100%;"></select>
+          </div>
+
           <div class="field">
             <label for="mSku">รหัสสินค้า (SKU)</label>
             <div class="combo-wrap" style="display:flex; gap:8px; position:relative;">
@@ -2420,6 +2425,11 @@ function runApp(sb, currentProfile){
     }
   });
 
+  // Changing which project a batch is destined for, mid-cart, would silently move already-added
+  // lines to the newly picked project — clear the cart on change, same safety behavior as
+  // switching ประเภทรายการ/ลูกค้า.
+  document.getElementById('mProject').addEventListener('change', onMovementModeOrCustomerChanged);
+
   // ---------------- Movement dialog: multi-line cart ----------------
   let movementCart = [];
 
@@ -2449,8 +2459,38 @@ function runApp(sb, currentProfile){
     } else {
       document.getElementById('mQuantity').removeAttribute('max');
     }
+    updateMProjectOptions();
     updateMBoqFactorField();
     renderCartTable();
+  }
+
+  function movementProjectId(){
+    return document.getElementById('mProject').value || null;
+  }
+
+  // Rebuilds the "โปรเจคของลูกค้า" picker whenever the selected customer (or movement type)
+  // changes. Shown only for เบิกออก with a customer chosen — every customer_items row now needs
+  // a project_id to actually show up anywhere in the customer/project UI, so withdrawing to a
+  // customer without picking a project would silently produce an "orphaned" item again.
+  function updateMProjectOptions(){
+    const field = document.getElementById('mProjectField');
+    const sel = document.getElementById('mProject');
+    const custId = movementCustomerId();
+    if (movementMode() !== 'out' || !custId){
+      field.style.display = 'none';
+      sel.innerHTML = '';
+      return;
+    }
+    field.style.display = '';
+    const prevValue = sel.value; // preserve the current pick across rebuilds (e.g. this function
+    const custProjects = projects.filter(p => p.customer_id === custId); // runs on its own change)
+    if (!custProjects.length){
+      sel.innerHTML = '<option value="">— ลูกค้ารายนี้ยังไม่มีโปรเจค —</option>';
+    } else {
+      sel.innerHTML = '<option value="">— เลือกโปรเจค —</option>' +
+        custProjects.map(p => `<option value="${p.id}">${escapeHtml(p.name)} (${escapeHtml(p.status)})</option>`).join('');
+      if (custProjects.some(p => p.id === prevValue)) sel.value = prevValue;
+    }
   }
 
   // Shows the optional "units per lot" field (used only by BOQ pricing later, never touches real
@@ -2544,6 +2584,10 @@ function runApp(sb, currentProfile){
     if (!product){ errEl.textContent = 'กรุณาระบุหรือสแกน SKU สินค้าที่ถูกต้องก่อน'; return; }
     if (!qty || qty <= 0){ errEl.textContent = 'กรุณากรอกจำนวนให้ถูกต้อง'; return; }
     if (needsPrice && (Number.isNaN(price) || price < 0)){ errEl.textContent = 'กรุณากรอกราคาต่อหน่วยให้ถูกต้อง'; return; }
+    if (type === 'out' && custId && !movementProjectId()){
+      errEl.textContent = 'กรุณาเลือกโปรเจคของลูกค้าก่อนเพิ่มรายการ (ถ้ายังไม่มีโปรเจค ให้ไปสร้างที่หน้าลูกค้าก่อน)';
+      return;
+    }
 
     let lotId = null;
     let lotLabel = null;
@@ -3077,7 +3121,13 @@ function runApp(sb, currentProfile){
 
     const type = movementMode();
     const custId = movementCustomerId();
+    const projectId = custId ? movementProjectId() : null;
     const note = document.getElementById('mNote').value.trim() || null;
+
+    if (custId && !projectId){
+      errEl.textContent = 'กรุณาเลือกโปรเจคของลูกค้าก่อนบันทึก';
+      return;
+    }
 
     const submitBtn = document.getElementById('movementSubmitBtn');
     submitBtn.disabled = true;
@@ -3091,7 +3141,7 @@ function runApp(sb, currentProfile){
     }));
 
     const { error } = await sb.rpc('record_movement_batch', {
-      p_type: type, p_customer_id: custId, p_note: note, p_lines: lines
+      p_type: type, p_customer_id: custId, p_note: note, p_lines: lines, p_project_id: projectId
     });
 
     submitBtn.disabled = false;
