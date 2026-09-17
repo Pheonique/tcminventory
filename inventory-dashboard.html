@@ -3209,6 +3209,12 @@ function runApp(sb, currentProfile){
       return;
     }
 
+    const linkedCustomerItems = customerItems.filter(i => i.product_id === id);
+    if (linkedCustomerItems.length){
+      showToast(`ลบไม่ได้ เพราะสินค้านี้ยังมีรายการที่เบิกให้ลูกค้าอยู่ (${linkedCustomerItems.length} รายการ) ถ้าลบสินค้านี้ไปก่อน รายการเหล่านั้นจะ "รับคืน"/"ลบ" (คืนสต็อก) ไม่ได้อีกเลย ให้จัดการรายการของลูกค้าเหล่านั้นให้เรียบร้อยก่อน แล้วค่อยกลับมาลบสินค้านี้`, true);
+      return;
+    }
+
     if (!confirm(`ลบสินค้า "${product.name}" ใช่หรือไม่? ประวัติที่เกี่ยวข้องจะถูกลบไปด้วย`)) return;
 
     const { error } = await sb.from('products').delete().eq('id', id);
