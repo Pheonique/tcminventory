@@ -3042,7 +3042,10 @@ function runApp(sb, currentProfile){
       body.innerHTML = '<tr><td colspan="7" class="empty-note">ไม่มีล็อตสินค้านี้</td></tr>';
       return;
     }
-    body.innerHTML = lots.map(l => `
+    body.innerHTML = lots.map(l => {
+      const isDepleted = Number(l.quantity_remaining) <= 0;
+      const deleteAttrs = isDepleted ? '' : `disabled title="ลบได้เฉพาะล็อตที่คงเหลือ 0 เท่านั้น"`;
+      return `
       <tr>
         <td style="padding:6px 8px; white-space:nowrap;">${dt(l.received_at)}</td>
         <td style="padding:6px 8px; white-space:nowrap;">${int(l.quantity_received)}</td>
@@ -3050,13 +3053,44 @@ function runApp(sb, currentProfile){
         <td style="padding:6px 8px;"><input type="number" min="0" step="0.01" value="${l.cost_price}" class="lot-cost" style="width:85px;"></td>
         <td style="padding:6px 8px;"><input type="number" min="0" step="any" value="${l.boq_unit_factor ?? ''}" class="lot-boqfactor" style="width:75px;" placeholder="-"></td>
         <td style="padding:6px 8px;"><input type="text" value="${escapeHtml(l.note || '')}" class="lot-note" style="width:110px;"></td>
-        <td style="padding:6px 8px; white-space:nowrap;"><button type="button" class="btn-ghost" data-lot-save="${l.id}" data-admin-only>บันทึก</button></td>
+        <td style="padding:6px 8px; white-space:nowrap;">
+          <button type="button" class="btn-ghost" data-lot-save="${l.id}" data-admin-only>บันทึก</button>
+          <button type="button" class="btn-ghost" data-lot-delete="${l.id}" data-admin-only ${deleteAttrs}>ลบ</button>
+        </td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
+  }
+
+  async function refreshProductLotsView(){
+    await loadAll();
+    const productId = document.getElementById('productId').value;
+    const refreshed = products.find(p => p.id === productId);
+    if (refreshed) document.getElementById('fQuantity').value = refreshed.quantity;
+    if (productId) renderProductLots(productId);
   }
 
   document.getElementById('productLotsBody').addEventListener('click', async (e) => {
     const lotId = e.target.dataset.lotSave;
+    const deleteLotId = e.target.dataset.lotDelete;
+
+    if (deleteLotId){
+      if (!confirm('ลบล็อตสินค้านี้ใช่หรือไม่? ลบแล้วกู้คืนไม่ได้ (ลบได้เฉพาะล็อตที่คงเหลือ 0 เท่านั้น)')) return;
+
+      e.target.disabled = true;
+      const { error } = await sb.rpc('delete_stock_lot', { p_lot_id: deleteLotId });
+      e.target.disabled = false;
+
+      if (error){
+        showToast('ลบล็อตไม่สำเร็จ: ' + error.message, true);
+        return;
+      }
+
+      showToast('ลบล็อตสินค้าเรียบร้อย');
+      await refreshProductLotsView();
+      return;
+    }
+
     if (!lotId) return;
 
     const row = e.target.closest('tr');
@@ -3091,12 +3125,7 @@ function runApp(sb, currentProfile){
     }
 
     showToast('แก้ไขล็อตสินค้าเรียบร้อย');
-    await loadAll();
-
-    const productId = document.getElementById('productId').value;
-    const refreshed = products.find(p => p.id === productId);
-    if (refreshed) document.getElementById('fQuantity').value = refreshed.quantity;
-    if (productId) renderProductLots(productId);
+    await refreshProductLotsView();
   });
 
   productForm.addEventListener('submit', async (e) => {
